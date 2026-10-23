@@ -1,0 +1,194 @@
+model:
+  name: gestion_paroissiale
+  version: "0.2"
+  description: >
+    Modèle sémantique initial du domaine de gestion paroissiale.
+
+  entities:
+    Paroisse:
+      description: >
+        Communauté ecclésiale à laquelle les membres sont officiellement rattachés.
+      storage:
+        table: paroisse
+        id: id
+      attributes:
+        nom:
+          column: nom
+          type: string
+          description: Nom de la paroisse
+      synonyms:
+        - église
+        - communauté
+      relationships:
+        zones:
+          target: ZoneGeographique
+          cardinality: one-to-many
+        membres:
+          target: Membre
+          cardinality: one-to-many
+        associations:
+          target: Association
+          cardinality: one-to-many
+
+    ZoneGeographique:
+      description: >
+        Zone géographique appartenant à une paroisse.
+      storage:
+        table: zone_geographique
+        id: id
+      attributes:
+        nom:
+          column: nom
+          type: string
+          description: Nom de la zone
+      synonyms:
+        - zone
+        - groupe
+      relationships:
+        paroisse:
+          target: Paroisse
+          cardinality: many-to-one
+        membres:
+          target: Membre
+          cardinality: one-to-many
+
+    Membre:
+      description: >
+        Personne rattachée à une paroisse et à une zone géographique de cette même paroisse.
+      storage:
+        table: membre
+        id: id
+      attributes:
+        nom:
+          column: nom
+          type: string
+          description: Nom de famille
+        prenom:
+          column: prenom
+          type: string
+          description: Prénom
+        adresse:
+          column: adresse
+          type: string
+          description: Adresse habituelle
+        sexe:
+          column: sexe
+          type: string
+          allowed_values:
+            - HOMME
+            - FEMME
+        date_naissance:
+          column: date_naissance
+          type: date
+        statut_matrimonial:
+          column: statut_matrimonial
+          type: string
+          allowed_values:
+            - CELIBATAIRE
+            - MARIE
+      synonyms:
+        - adhérent
+        - fidèle
+      relationships:
+        paroisse:
+          target: Paroisse
+          cardinality: many-to-one
+        zone:
+          target: ZoneGeographique
+          cardinality: many-to-one
+        associations:
+          target: Association
+          through: adhesion_association
+          cardinality: many-to-many
+
+    Association:
+      description: >
+        Groupe organisé au sein d'une paroisse.
+      storage:
+        table: association
+        id: id
+      attributes:
+        nom:
+          column: nom
+          type: string
+        code:
+          column: code
+          type: string
+      standard_types:
+        - HOMMES
+        - FEMMES
+        - JEUNES
+        - ECOLE_SABBAT
+      relationships:
+        paroisse:
+          target: Paroisse
+          cardinality: many-to-one
+        membres:
+          target: Membre
+          through: adhesion_association
+          cardinality: many-to-many
+
+    DemandePassage:
+      description: >
+        Demande de participation temporaire au culte dans une autre paroisse.
+      storage:
+        table: demande_passage
+        id: id
+      attributes:
+        date_demande:
+          column: date_demande
+          type: date
+        date_debut_passage:
+          column: date_debut_passage
+          type: date
+        date_fin_passage:
+          column: date_fin_passage
+          type: date
+        statut:
+          column: statut
+          type: string
+      relationships:
+        membre:
+          target: Membre
+          cardinality: many-to-one
+        paroisse_origine:
+          target: Paroisse
+          cardinality: many-to-one
+        paroisse_destination:
+          target: Paroisse
+          cardinality: many-to-one
+
+    HistoriqueRattachement:
+      description: >
+        Trace les changements de paroisse et de zone d'un membre dans le temps.
+      storage:
+        table: historique_rattachement
+        id: id
+      attributes:
+        date_effet:
+          column: date_effet
+          type: date
+      relationships:
+        membre:
+          target: Membre
+          cardinality: many-to-one
+        nouvelle_paroisse:
+          target: Paroisse
+          cardinality: many-to-one
+        nouvelle_zone:
+          target: ZoneGeographique
+          cardinality: many-to-one
+
+  business_rules:
+    - id: BR-001
+      description: Chaque membre appartient à une paroisse et à une zone de cette même paroisse.
+    - id: BR-002
+      description: Un membre non marié est considéré comme jeune, quel que soit son âge.
+    - id: BR-003
+      description: Un membre âgé de moins de 16 ans doit adhérer à l'École du Sabbat.
+    - id: BR-004
+      description: Un membre non marié âgé d'au moins 16 ans doit adhérer à l'Association des Jeunes.
+    - id: BR-005
+      description: Un membre marié âgé d'au moins 16 ans doit adhérer à l'association correspondant à son sexe.
+    - id: BR-006
+      description: Un homme ne peut pas adhérer à l'Association des Femmes et une femme ne peut pas adhérer à l'Association des Hommes.
