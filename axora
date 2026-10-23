@@ -1,0 +1,464 @@
+# Axora — Vision et identité du produit
+
+**Nom du produit :** Axora  
+**Ancien nom de travail :** IntentDB  
+**Statut :** Concept en cours de validation  
+**Version du document :** 1.0
+
+---
+
+## 1. Présentation d'Axora
+
+**Axora est une plateforme d'intelligence artificielle pilotée par l'intention, conçue pour transformer les demandes exprimées en langage naturel en opérations concrètes sur les données métier.**
+
+L'utilisateur n'a pas besoin de connaître la structure de la base de données, les relations entre les entités ou les opérations techniques nécessaires pour obtenir un résultat.
+
+Il exprime ce qu'il souhaite accomplir. Axora interprète sa demande, mobilise les connaissances disponibles sur le domaine métier, détermine les opérations nécessaires, les exécute à travers des outils contrôlés et lui restitue le résultat.
+
+L'objectif est de réduire la dépendance aux fonctionnalités prédéfinies et aux interfaces conçues spécifiquement pour chaque besoin.
+
+### Exemple
+
+Dans une application traditionnelle de gestion paroissiale, il faut généralement développer des écrans et des fonctionnalités spécifiques pour rechercher des membres, filtrer les résultats, produire des statistiques ou générer des rapports.
+
+Avec Axora, un utilisateur pourrait simplement demander :
+
+> Qui sont les membres de la paroisse Andranovelona qui habitent dans la zone d'Andoharanofotsy ?
+
+Axora devrait être capable de comprendre la demande, d'identifier les relations pertinentes entre les membres, les paroisses et les zones géographiques, d'interroger les données et de présenter les résultats.
+
+Cet exemple représente une capacité visée par le projet. Sa fiabilité et sa faisabilité doivent être validées par le prototype.
+
+---
+
+## 2. Pourquoi le nom Axora ?
+
+Axora est un nom inventé, choisi pour identifier le produit indépendamment de son implémentation technique actuelle.
+
+Le nom ne désigne ni une technologie particulière, ni un langage de programmation, ni un moteur de base de données.
+
+Cette indépendance est importante : le produit pourrait évoluer de la manipulation de données vers des capacités plus larges d'analyse, de raisonnement et d'action sur les systèmes métier.
+
+### 2.1. Interprétation du nom
+
+Le nom Axora peut être associé à plusieurs idées :
+
+- **Action :** transformer une intention en résultat concret.
+- **Axe :** fournir un point central à travers lequel l'utilisateur interagit avec ses données métier.
+- **Orientation :** comprendre l'objectif de l'utilisateur plutôt que lui imposer un parcours prédéfini.
+- **Exploration :** découvrir les informations et les relations nécessaires pour répondre à une demande.
+
+Ces associations constituent une interprétation de marque. Elles ne représentent pas une étymologie officielle du nom.
+
+### 2.2. Pourquoi ne pas conserver IntentDB ?
+
+Le nom IntentDB décrivait directement une partie de la vision initiale : une base de données pilotée par l'intention.
+
+Cependant, cette appellation pouvait donner l'impression que le projet était principalement un nouveau moteur de base de données.
+
+Or, l'ambition d'Axora est plus large.
+
+La base de données constitue un composant technique. La capacité centrale du produit réside dans l'interprétation des intentions, la compréhension du modèle métier et l'orchestration dynamique des opérations.
+
+Axora permet donc de dissocier le nom du produit de son implémentation technique.
+
+---
+
+## 3. Identité et positionnement
+
+### 3.1. Nom
+
+**Axora**
+
+### 3.2. Slogan proposé
+
+**From intent to action.**
+
+Traduction : *De l'intention à l'action.*
+
+Ce slogan exprime le principe fondamental du produit : l'utilisateur décrit son objectif et le système détermine comment tenter de le réaliser.
+
+### 3.3. Proposition de valeur
+
+> Axora permet aux utilisateurs d'interagir avec leurs données métier en exprimant directement leurs intentions, sans devoir connaître à l'avance chaque fonctionnalité ou opération technique disponible.
+
+### 3.4. Positionnement
+
+Axora est un produit logiciel natif de l'IA, dont le fonctionnement repose sur un agent capable d'interpréter les demandes, d'utiliser un modèle métier et d'orchestrer des opérations génériques sur les données.
+
+Axora ne doit pas être considéré uniquement comme :
+
+- un chatbot connecté à une base de données ;
+- une interface conversationnelle ajoutée à une application CRUD ;
+- un générateur de requêtes SQL ;
+- un assistant qui fournit uniquement des explications ;
+- un nouveau moteur de base de données, par définition.
+
+Le projet cherche à valider une approche dans laquelle l'agent constitue le cœur de l'interaction et de l'orchestration.
+
+---
+
+## 4. Le problème que veut résoudre Axora
+
+Les applications métier traditionnelles reposent généralement sur des fonctionnalités anticipées et implémentées par les développeurs.
+
+Une nouvelle demande utilisateur peut nécessiter :
+
+1. La définition d'un nouveau besoin fonctionnel.
+2. La création d'un endpoint ou d'un service spécifique.
+3. L'implémentation d'une requête ou d'une règle métier.
+4. La création ou la modification d'un écran.
+5. L'ajout de tests et la livraison d'une nouvelle version.
+
+Cette approche reste pertinente pour de nombreux besoins. Toutefois, elle devient contraignante lorsque les utilisateurs veulent explorer leurs données, combiner des critères, produire des analyses ou formuler des demandes qui n'ont pas été anticipées.
+
+L'ajout d'un LLM à une application traditionnelle améliore certaines capacités, par exemple la recherche, la classification ou la génération de texte, sans nécessairement changer cette architecture fondamentale.
+
+Axora explore une autre approche : **déplacer une partie de la détermination des opérations depuis le code applicatif prédéfini vers un agent qui interprète dynamiquement l'intention de l'utilisateur.**
+
+L'objectif n'est pas de supprimer tout code métier. Il est de réduire le besoin de développer une fonctionnalité distincte pour chaque nouvelle demande.
+
+---
+
+## 5. Principes fondamentaux
+
+### 5.1. L'intention comme point d'entrée
+
+L'utilisateur commence par exprimer son besoin en langage naturel.
+
+Exemples :
+
+- « Liste les membres de cette paroisse. »
+- « Combien de membres sont inscrits dans chaque zone ? »
+- « Quels membres ne sont associés à aucune association obligatoire ? »
+- « Affiche l'évolution du nombre de membres par année. »
+
+Ces demandes ne doivent pas nécessairement correspondre à des endpoints développés individuellement.
+
+### 5.2. L'agent comme cœur du produit
+
+L'agent IA est responsable de l'interprétation et de l'orchestration.
+
+Il doit pouvoir :
+
+1. Comprendre l'objectif demandé.
+2. Déterminer les informations nécessaires.
+3. Explorer le modèle métier lorsqu'il ne dispose pas du contexte suffisant.
+4. Choisir les outils appropriés.
+5. Exécuter les opérations autorisées.
+6. Examiner les résultats.
+7. Poursuivre si des informations supplémentaires sont nécessaires.
+8. Produire une réponse adaptée à l'utilisateur.
+
+L'agent ne doit pas être considéré comme infaillible. Ses décisions doivent être évaluées et les opérations exécutées par des composants applicatifs contrôlés.
+
+### 5.3. Un modèle métier exploitable par l'agent
+
+L'agent doit pouvoir découvrir les entités, leurs propriétés, leurs relations et les règles métier pertinentes.
+
+Il ne doit pas dépendre uniquement de sa connaissance générale ou de suppositions produites par le LLM.
+
+Le modèle métier constitue une source de contexte structurée et vérifiable.
+
+### 5.4. Des opérations génériques
+
+Axora privilégie un ensemble limité d'outils génériques plutôt qu'un outil spécifique pour chaque fonctionnalité.
+
+Par exemple :
+
+- découvrir le modèle métier ;
+- rechercher et lire des données ;
+- créer un enregistrement ;
+- modifier un enregistrement ;
+- demander une clarification ;
+- analyser les résultats d'une opération.
+
+Les outils précis seront définis et validés au cours de l'implémentation.
+
+### 5.5. Une interface interchangeable
+
+Le chat est le point d'entrée initial envisagé, mais il ne constitue pas le cœur de l'architecture.
+
+À terme, Axora pourrait être accessible depuis une interface web, une application mobile, une interface vocale ou une autre application.
+
+Ces interfaces transmettraient les intentions à un même cœur applicatif.
+
+### 5.6. Une architecture évolutive sans complexité prématurée
+
+Le prototype doit privilégier une architecture simple, modulaire et testable.
+
+Le projet ne nécessite pas, au départ, une architecture distribuée, un système multi-agents ou un moteur de base de données entièrement nouveau.
+
+Ces possibilités ne seront étudiées que si les expérimentations démontrent une nécessité réelle.
+
+---
+
+## 6. Comment Axora doit fonctionner
+
+Le flux conceptuel est le suivant :
+
+```text
+Utilisateur
+    |
+    v
+Interface utilisateur
+    |
+    v
+Agent Axora
+    |
+    +----> Interprétation de l'intention
+    |
+    +----> Découverte du modèle métier
+    |
+    +----> Planification des opérations
+    |
+    +----> Appel des outils génériques
+                 |
+                 v
+          Services de données
+                 |
+                 v
+          Base de données
+                 |
+                 v
+          Résultats des opérations
+                 |
+                 v
+          Agent Axora
+                 |
+                 v
+          Réponse à l'utilisateur
+```
+
+### 6.1. Comprendre
+
+Axora reçoit une demande et détermine ce que l'utilisateur souhaite obtenir ou modifier.
+
+Si la demande est ambiguë, l'agent peut demander une clarification.
+
+### 6.2. Découvrir
+
+Lorsque cela est nécessaire, l'agent consulte le modèle métier pour identifier les entités, les attributs, les relations et les règles pertinentes.
+
+Il ne doit pas supposer que les données possèdent une structure qu'il n'a pas vérifiée.
+
+### 6.3. Décider
+
+L'agent détermine la prochaine opération utile.
+
+Il peut notamment :
+
+- explorer davantage le modèle ;
+- interroger les données ;
+- créer ou modifier un enregistrement ;
+- examiner le résultat d'une opération ;
+- demander une information manquante ;
+- répondre à l'utilisateur.
+
+### 6.4. Exécuter
+
+Les opérations sont réalisées par des outils applicatifs dont les entrées, les sorties et les permissions sont définies.
+
+Le LLM propose une opération ; le runtime Axora valide la décision et orchestre son exécution.
+
+Le LLM ne doit pas disposer d'un accès illimité à la base de données ou au système d'exploitation.
+
+### 6.5. Observer et continuer
+
+Après une opération, son résultat revient à l'agent.
+
+L'agent peut utiliser cette observation pour déterminer si le résultat suffit ou si une nouvelle opération est nécessaire.
+
+Cette boucle constitue une partie essentielle de l'architecture.
+
+### 6.6. Répondre
+
+Lorsque l'objectif est atteint, l'agent restitue le résultat en langage naturel.
+
+Il doit distinguer les résultats effectivement obtenus des déductions, hypothèses et informations manquantes.
+
+---
+
+## 7. Architecture technique envisagée
+
+Le premier prototype repose sur des technologies existantes.
+
+| Composant | Technologie ou approche envisagée |
+|---|---|
+| Langage | Python |
+| API | FastAPI |
+| Validation des données | Pydantic |
+| Accès aux données | SQLAlchemy |
+| Base de données | PostgreSQL |
+| Intelligence | LLM accessible via un adaptateur |
+| Orchestration | Runtime et boucle d'agent développés pour Axora |
+| Tests | pytest |
+
+Ces choix représentent la base technique envisagée pour le MVP, et non une architecture définitivement validée.
+
+### 7.1. Pourquoi commencer avec PostgreSQL ?
+
+Le projet ne cherche pas, à ce stade, à démontrer qu'un nouveau moteur de base de données est nécessaire.
+
+PostgreSQL offre un support relationnel adapté à de nombreux domaines métier, notamment les entités, les relations et les contraintes d'intégrité.
+
+Le prototype permettra d'évaluer si un modèle métier structuré, associé à un agent et à des opérations génériques, suffit pour satisfaire les besoins identifiés.
+
+Un autre moteur ou une nouvelle approche de stockage ne sera envisagé que si des limites concrètes sont mises en évidence.
+
+### 7.2. Pourquoi Python ?
+
+Python permet de développer rapidement le runtime de l'agent, les intégrations LLM, les outils, les validations et les tests.
+
+Le choix vise à accélérer l'expérimentation du concept sans introduire une complexité technique inutile.
+
+---
+
+## 8. Première application : gestion paroissiale
+
+La première application envisagée permettra d'expérimenter Axora dans un domaine métier concret.
+
+Le périmètre initial porte sur l'organisation paroissiale, notamment :
+
+- les paroisses ;
+- les membres ;
+- les zones géographiques ;
+- les associations ;
+- les appartenances aux associations ;
+- les changements de paroisse ou de zone et leur historique ;
+- les règles métier liées à l'appartenance et à l'organisation.
+
+Cette application constitue un terrain d'expérimentation pour évaluer la capacité d'Axora à comprendre un domaine, découvrir son modèle et exécuter des opérations génériques.
+
+### Exemple de scénario
+
+L'utilisateur demande :
+
+> Quels sont les membres non mariés de la paroisse Andranovelona qui habitent à Andoharanofotsy ?
+
+Le résultat attendu est que l'agent :
+
+1. Identifie les concepts métier nécessaires.
+2. Vérifie les relations entre membres, paroisses et zones.
+3. Identifie la représentation du statut matrimonial.
+4. Construise une requête adaptée au modèle réel.
+5. Exécute la recherche à travers le moteur de requêtes.
+6. Présente les membres correspondants.
+
+Le scénario sera considéré comme réussi uniquement si le résultat correspond aux données de référence et aux règles du domaine, et pas seulement si la réponse semble plausible.
+
+---
+
+## 9. Hypothèses et capacités à démontrer
+
+Axora est encore un concept en cours de validation. Il est important de distinguer la vision des résultats effectivement démontrés.
+
+### 9.1. Hypothèses du projet
+
+Les hypothèses suivantes doivent être testées :
+
+- Un agent peut interpréter correctement une variété de demandes métier exprimées en langage naturel.
+- Un modèle métier explicite peut lui permettre de découvrir les données et les relations pertinentes.
+- Un petit ensemble d'outils génériques peut satisfaire plusieurs demandes sans création d'un outil spécifique pour chacune.
+- Une boucle d'exécution et d'observation peut permettre à l'agent de réaliser des tâches nécessitant plusieurs opérations.
+- Le système peut rester fiable et suffisamment simple à mesure que les demandes deviennent plus complexes.
+
+### 9.2. Capacités du MVP à valider
+
+Le premier prototype doit démontrer progressivement que :
+
+1. Une demande utilisateur peut être convertie en une décision structurée.
+2. L'agent peut découvrir les éléments pertinents du modèle métier.
+3. Les outils génériques peuvent interroger les données.
+4. Le runtime peut exécuter plusieurs étapes successives.
+5. Les résultats retournés sont corrects par rapport aux données de référence.
+6. Les demandes ambiguës ou non prises en charge sont traitées explicitement.
+7. Les opérations d'écriture respectent les contraintes définies par l'application.
+
+Aucune de ces capacités ne doit être considérée comme acquise avant les tests correspondants.
+
+---
+
+## 10. Principes de sécurité et de fiabilité
+
+Même si le MVP privilégie la validation du concept, certaines protections minimales sont indispensables.
+
+- Les outils doivent valider les arguments fournis par l'agent.
+- Les requêtes doivent être construites de manière sûre, avec des paramètres adaptés.
+- Les contraintes et règles métier doivent être vérifiées par le backend.
+- L'agent ne doit pas pouvoir exécuter arbitrairement du SQL ou des commandes système.
+- Les modifications doivent être exécutées dans un environnement de test contrôlé.
+- Les erreurs d'exécution doivent être retournées explicitement à l'agent.
+- Les opérations d'écriture doivent pouvoir être testées avec des données connues et des résultats attendus.
+
+Ces protections ne constituent pas encore un dispositif de gouvernance complet. Elles permettent d'expérimenter le concept sans confondre autonomie de raisonnement et accès illimité aux données.
+
+---
+
+## 11. Ce qu'Axora n'est pas, à ce stade
+
+Pour éviter les confusions, le projet ne prétend pas encore être :
+
+- un moteur de base de données révolutionnaire ;
+- un agent capable d'exécuter toute demande sans limite ;
+- un système capable de modifier automatiquement son propre schéma de données sans validation ;
+- un remplacement universel des applications métier traditionnelles ;
+- une plateforme multi-agents ;
+- une solution dont la sécurité, la précision et la scalabilité ont déjà été démontrées.
+
+Ces possibilités peuvent faire l'objet d'expérimentations futures, mais elles ne font pas partie des capacités établies du prototype.
+
+---
+
+## 12. Vision à long terme
+
+À long terme, Axora pourrait évoluer vers une plateforme dans laquelle l'utilisateur décrit ses objectifs métier et le système détermine dynamiquement comment exploiter les données et les capacités disponibles.
+
+Cette vision implique de dépasser la simple génération de requêtes pour combiner :
+
+- la compréhension de l'intention ;
+- la connaissance du domaine métier ;
+- le raisonnement sur les opérations nécessaires ;
+- l'exécution d'actions à travers des outils ;
+- l'observation et la vérification des résultats ;
+- la capacité à produire des réponses et des résultats exploitables.
+
+La priorité reste cependant de valider cette vision avec un prototype limité, des données réelles de test et des scénarios métier mesurables.
+
+---
+
+## 13. Prochaine étape
+
+La prochaine étape consiste à construire le premier runtime fonctionnel d'Axora en Python.
+
+Le périmètre initial devrait comprendre :
+
+1. Un adaptateur LLM.
+2. Un contrat de décision structuré.
+3. Un registre d'outils.
+4. Un outil de découverte du modèle métier.
+5. Un outil générique de requête.
+6. Une boucle d'agent avec une limite d'itérations.
+7. Un scénario de test complet sur la gestion paroissiale.
+
+L'objectif de cette première étape n'est pas de construire immédiatement une plateforme complète. Il est de répondre à une question fondamentale :
+
+**Un agent Axora peut-il comprendre une demande métier non codée spécifiquement à l'avance, découvrir les informations nécessaires et obtenir un résultat correct à travers un petit ensemble d'outils génériques ?**
+
+La réponse à cette question guidera les décisions architecturales suivantes.
+
+---
+
+## 14. Résumé
+
+Axora est le nom du produit qui explore une nouvelle manière d'interagir avec les données métier.
+
+Son principe central est simple :
+
+**L'utilisateur exprime son intention. Axora comprend le besoin, découvre le contexte nécessaire, orchestre les opérations disponibles et restitue le résultat.**
+
+Le produit place l'agent au centre de l'interaction, le modèle métier au centre de la compréhension et les outils génériques au centre de l'exécution.
+
+Le prototype doit déterminer si cette approche peut offrir une alternative pertinente à la multiplication des fonctionnalités prédéfinies, tout en maintenant la correction des résultats, la maîtrise des opérations et une architecture raisonnablement simple.
+
+**Axora — From intent to action.**
