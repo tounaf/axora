@@ -128,6 +128,24 @@ model:
           through: adhesion_association
           cardinality: many-to-many
 
+    AdhesionAssociation:
+      description: >
+        Adhésions d'un membre à une association.
+      storage:
+        table: adhesion_association
+        id: id
+      attributes:
+        date_adhesion:
+          column: date_adhesion
+          type: date
+      relationships:
+        membre:
+          target: Membre
+          cardinality: many-to-one
+        association:
+          target: Association
+          cardinality: many-to-one
+
     DemandePassage:
       description: >
         Demande de participation temporaire au culte dans une autre paroisse.
