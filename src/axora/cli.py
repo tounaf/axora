@@ -1,7 +1,9 @@
 import asyncio
 import sys
 from pathlib import Path
+from axora.agent.runtime import AgentRuntime
 from axora.config import settings
+from axora.llm.provider import get_llm_adapter
 from axora.semantic.service import SemanticModelService
 from axora.tools.discover_model import DiscoverModelTool
 from axora.tools.registry import ToolRegistry
@@ -20,15 +22,18 @@ async def run_cli():
         sys.exit(1)
 
     semantic_service = SemanticModelService.from_yaml(yaml_path)
-    discover_tool = DiscoverModelTool(semantic_service)
-
     registry = ToolRegistry()
-    registry.register(discover_tool)
+    registry.register(DiscoverModelTool(semantic_service))
 
-    print(f"[*] Semantic Model: {semantic_service.model_name} (v{semantic_service.version})")
+    llm_adapter = get_llm_adapter()
+    runtime = AgentRuntime(tool_registry=registry, llm_adapter=llm_adapter)
+
+    print(f"[*] Semantic Model:  {semantic_service.model_name} (v{semantic_service.version})")
     print(f"[*] Registered Tools: {[t.name for t in registry.list_tools()]}")
     print("-" * 60)
-    print("Tapez vos intentions ou 'exit' pour quitter le CLI.\n")
+    print("Tapez vos intentions métier ou 'exit' pour quitter.\n")
+
+    history: list[dict[str, str]] = []
 
     while True:
         try:
@@ -39,17 +44,14 @@ async def run_cli():
                 print("[*] Fermeture du CLI Axora. Au revoir!")
                 break
 
-            print(f"[*] Traitement de l'intention: '{user_input}'...")
+            print("[*] Traitement par le Runtime Agent...")
+            response = await runtime.process_intent(user_input, history=history)
 
-            # Simulated agent execution step with registered tools
-            if "paroisse" in user_input.lower() or "membre" in user_input.lower() or "zone" in user_input.lower():
-                result = await discover_tool.execute({"include": ["attributes"]})
-                entities = [e["name"] for e in result.data["entities"]]
-                print(f"[Agent Response] Découverte sémantique effectuée. Entités disponibles: {entities}")
-            else:
-                print("[Agent Response] Intention reçue. Veuillez utiliser le moteur de requêtes ou préciser le concept.")
-
+            print(f"\nAxora Agent > {response}\n")
             print("-" * 60)
+
+            history.append({"role": "user", "content": user_input})
+            history.append({"role": "assistant", "content": response})
 
         except (KeyboardInterrupt, EOFError):
             print("\n[*] Fermeture du CLI Axora.")
