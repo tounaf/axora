@@ -1,18 +1,12 @@
 from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from axora.data.models import Association, AdhesionAssociation, Membre, Paroisse, ZoneGeographique
+from axora.data.dynamic_models import get_dynamic_table
 from axora.semantic.service import SemanticModelService
-
-# Map SQL table names (dynamically derived from semantic model storage.table) to SQLAlchemy ORM models
-TABLE_TO_MODEL_MAP = {
-    model_cls.__tablename__: model_cls
-    for model_cls in (Paroisse, ZoneGeographique, Membre, Association, AdhesionAssociation)
-}
 
 
 class QueryEngine:
-    """Translates structured semantic queries into safe, parameterized SQLAlchemy async queries dynamically using the semantic model manifest."""
+    """Translates structured semantic queries into safe, parameterized SQLAlchemy async queries dynamically from the semantic model without static ORM classes."""
 
     def __init__(self, semantic_service: SemanticModelService) -> None:
         self._semantic_service = semantic_service
@@ -30,12 +24,10 @@ class QueryEngine:
             raise ValueError(f"Unknown target entity or synonym: '{entity_name}'")
 
         table_name = entity_def.storage.table
-        model_cls = TABLE_TO_MODEL_MAP.get(table_name)
-        if not model_cls:
-            raise ValueError(f"No ORM mapping found for table '{table_name}' associated with entity '{entity_name}'")
+        primary_table = get_dynamic_table(table_name, self._semantic_service)
 
-        stmt = select(model_cls)
-        joined_models = set()
+        stmt = select(primary_table)
+        joined_tables = set()
         filters = filters or []
 
         for flt in filters:
@@ -50,9 +42,9 @@ class QueryEngine:
             if len(parts) == 1:
                 attr_name = parts[0]
                 attr_def = entity_def.attributes.get(attr_name)
-                column_name = attr_def.column if attr_def else attr_name
-                column = getattr(model_cls, column_name, None)
-                if column is not None:
+                col_name = attr_def.column if attr_def else attr_name
+                if col_name in primary_table.c:
+                    column = primary_table.c[col_name]
                     stmt = self._apply_filter(stmt, column, operator, value)
 
             elif len(parts) == 2:
@@ -62,43 +54,53 @@ class QueryEngine:
                 if rel_def:
                     target_entity_def = self._semantic_service.get_entity_details(rel_def.target)
                     if target_entity_def:
-                        target_table = target_entity_def.storage.table
-                        target_model_cls = TABLE_TO_MODEL_MAP.get(target_table)
+                        target_table_name = target_entity_def.storage.table
+                        target_table = get_dynamic_table(target_table_name, self._semantic_service)
 
-                        if target_model_cls and target_model_cls not in joined_models and target_model_cls != model_cls:
-                            # Dynamic join based on ORM relationship attribute or relationship target
-                            rel_attr = getattr(model_cls, rel_name, None)
-                            if rel_attr is not None:
-                                stmt = stmt.join(rel_attr)
+                        if target_table_name not in joined_tables and target_table_name != table_name:
+                            # Join dynamically on matching foreign key column name
+                            fk_col_name = f"{target_table_name}_id"
+                            if fk_col_name in primary_table.c and target_entity_def.storage.id in target_table.c:
+                                stmt = stmt.join(
+                                    target_table,
+                                    primary_table.c[fk_col_name] == target_table.c[target_entity_def.storage.id]
+                                )
+                            elif entity_def.storage.id in primary_table.c and f"{table_name}_id" in target_table.c:
+                                stmt = stmt.join(
+                                    target_table,
+                                    primary_table.c[entity_def.storage.id] == target_table.c[f"{table_name}_id"]
+                                )
                             else:
-                                stmt = stmt.join(target_model_cls)
-                            joined_models.add(target_model_cls)
+                                stmt = stmt.join(target_table)
+
+                            joined_tables.add(target_table_name)
 
                         target_attr_def = target_entity_def.attributes.get(target_attr)
                         col_name = target_attr_def.column if target_attr_def else target_attr
-                        column = getattr(target_model_cls, col_name, None) if target_model_cls else None
-                        if column is not None:
+                        if col_name in target_table.c:
+                            column = target_table.c[col_name]
                             stmt = self._apply_filter(stmt, column, operator, value)
 
         stmt = stmt.limit(min(limit, 200))
         result = await session.execute(stmt)
-        records = result.scalars().all()
+        rows = result.fetchall()
 
         output = []
-        for record in records:
+        for row in rows:
             row_dict = {}
+            row_mapping = row._mapping
             if select_fields:
                 for field in select_fields:
                     attr_def = entity_def.attributes.get(field)
                     col_name = attr_def.column if attr_def else field
-                    if hasattr(record, col_name):
-                        val = getattr(record, col_name)
+                    if col_name in row_mapping:
+                        val = row_mapping[col_name]
                         row_dict[field] = str(val) if not isinstance(val, (int, float, bool, type(None))) else val
             else:
                 for attr_key, attr_def in entity_def.attributes.items():
                     col_name = attr_def.column
-                    if hasattr(record, col_name):
-                        val = getattr(record, col_name)
+                    if col_name in row_mapping:
+                        val = row_mapping[col_name]
                         row_dict[attr_key] = str(val) if not isinstance(val, (int, float, bool, type(None))) else val
 
             output.append(row_dict)

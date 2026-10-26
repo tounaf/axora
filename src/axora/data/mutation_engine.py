@@ -1,16 +1,11 @@
 import datetime
 import uuid
 from typing import Any
-from sqlalchemy import select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from axora.data.models import AdhesionAssociation, Association, Membre, Paroisse, ZoneGeographique
+from axora.data.dynamic_models import get_dynamic_table
 from axora.semantic.models import EntityDefinition
 from axora.semantic.service import SemanticModelService
-
-TABLE_TO_MODEL_MAP = {
-    model_cls.__tablename__: model_cls
-    for model_cls in (Paroisse, ZoneGeographique, Membre, Association, AdhesionAssociation)
-}
 
 
 class BusinessRuleViolation(Exception):
@@ -19,7 +14,7 @@ class BusinessRuleViolation(Exception):
 
 
 class MutationEngine:
-    """Engine responsible for dynamically validating business rules and executing create/update mutations based on the Semantic Model Manifest."""
+    """Engine responsible for dynamically validating business rules and executing create/update mutations based strictly on the Semantic Model Manifest without static ORM model classes."""
 
     def __init__(self, semantic_service: SemanticModelService) -> None:
         self._semantic_service = semantic_service
@@ -35,18 +30,22 @@ class MutationEngine:
             raise ValueError(f"Unknown target entity or synonym: '{entity_name}'")
 
         table_name = entity_def.storage.table
-        model_cls = TABLE_TO_MODEL_MAP.get(table_name)
-        if not model_cls:
-            raise ValueError(f"No ORM model mapped for storage table '{table_name}'")
+        table_obj = get_dynamic_table(table_name, self._semantic_service)
 
         mapped_payload = self._map_and_convert_payload(entity_def, payload)
+
+        # Auto-generate Primary Key UUID if not supplied
+        pk_col = entity_def.storage.id
+        if pk_col in table_obj.c and pk_col not in mapped_payload:
+            mapped_payload[pk_col] = uuid.uuid4()
+
         await self._validate_semantic_rules(session, entity_def, mapped_payload)
 
-        instance = model_cls(**mapped_payload)
-        session.add(instance)
+        stmt = insert(table_obj).values(**mapped_payload)
+        await session.execute(stmt)
         await session.flush()
 
-        return self._format_instance_output(instance, entity_def)
+        return self._format_dict_output(mapped_payload, entity_def)
 
     async def update_record(
         self,
@@ -60,36 +59,32 @@ class MutationEngine:
             raise ValueError(f"Unknown target entity or synonym: '{entity_name}'")
 
         table_name = entity_def.storage.table
-        model_cls = TABLE_TO_MODEL_MAP.get(table_name)
-        if not model_cls:
-            raise ValueError(f"No ORM model mapped for storage table '{table_name}'")
+        table_obj = get_dynamic_table(table_name, self._semantic_service)
 
         uid = uuid.UUID(str(record_id)) if isinstance(record_id, str) else record_id
+        pk_col = entity_def.storage.id
 
-        stmt = select(model_cls).where(getattr(model_cls, entity_def.storage.id) == uid)
-        result = await session.execute(stmt)
-        instance = result.scalar_one_or_none()
+        # Verify record existence
+        select_stmt = select(table_obj).where(table_obj.c[pk_col] == uid)
+        existing_res = await session.execute(select_stmt)
+        existing_row = existing_res.fetchone()
 
-        if not instance:
+        if not existing_row:
             raise ValueError(f"Record with ID '{record_id}' not found in entity '{entity_name}'")
 
         mapped_payload = self._map_and_convert_payload(entity_def, payload)
 
-        # Merge current instance state with update payload for full rule validation
-        merged_payload = {
-            col.name: getattr(instance, col.name)
-            for col in instance.__table__.columns
-        }
+        # Merge existing record state with update payload for full rule validation
+        merged_payload = dict(existing_row._mapping)
         merged_payload.update(mapped_payload)
 
         await self._validate_semantic_rules(session, entity_def, merged_payload)
 
-        for col_name, val in mapped_payload.items():
-            if hasattr(instance, col_name):
-                setattr(instance, col_name, val)
-
+        update_stmt = update(table_obj).where(table_obj.c[pk_col] == uid).values(**mapped_payload)
+        await session.execute(update_stmt)
         await session.flush()
-        return self._format_instance_output(instance, entity_def)
+
+        return self._format_dict_output(merged_payload, entity_def)
 
     def _map_and_convert_payload(self, entity_def: EntityDefinition, payload: dict[str, Any]) -> dict[str, Any]:
         """Dynamically converts semantic attribute keys to database column names and casts data types according to the manifest."""
@@ -110,7 +105,7 @@ class MutationEngine:
                 elif attr_def.type == "string" and key.endswith("_id") and isinstance(val, str):
                     val = uuid.UUID(val)
 
-            if isinstance(val, str) and (col_name.endswith("_id") or col_name == "id"):
+            if isinstance(val, str) and (col_name.endswith("_id") or col_name == entity_def.storage.id):
                 try:
                     val = uuid.UUID(val)
                 except ValueError:
@@ -127,39 +122,34 @@ class MutationEngine:
             if not target_entity_def:
                 continue
 
-            # Foreign key rule validation (e.g., ensuring child entity zone belongs to parent paroisse)
-            fk_col = f"{rel_def.target.lower()}_id"
-            if fk_col not in mapped_payload:
-                fk_col = f"{target_entity_def.storage.table}_id"
-
-            if fk_col in mapped_payload and rel_def.cardinality == "many-to-one":
-                # Check for hierarchical zone-paroisse validation dynamically
-                if entity_def.storage.table == "membre" and target_entity_def.storage.table == "zone_geographique":
-                    zone_id = mapped_payload.get("zone_geographique_id")
-                    paroisse_id = mapped_payload.get("paroisse_id")
-                    if zone_id and paroisse_id:
-                        zone_model = TABLE_TO_MODEL_MAP["zone_geographique"]
-                        stmt = select(zone_model).where(
-                            zone_model.id == zone_id,
-                            zone_model.paroisse_id == paroisse_id
+            # Foreign key rule validation (e.g. ensuring child zone belongs to parent paroisse)
+            if entity_def.storage.table == "membre" and target_entity_def.storage.table == "zone_geographique":
+                zone_id = mapped_payload.get("zone_geographique_id")
+                paroisse_id = mapped_payload.get("paroisse_id")
+                if zone_id and paroisse_id:
+                    zone_table = get_dynamic_table("zone_geographique", self._semantic_service)
+                    stmt = select(zone_table).where(
+                        zone_table.c.id == zone_id,
+                        zone_table.c.paroisse_id == paroisse_id
+                    )
+                    res = await session.execute(stmt)
+                    if not res.fetchone():
+                        raise BusinessRuleViolation(
+                            f"BR-001: La zone géographique '{zone_id}' n'appartient pas à la paroisse '{paroisse_id}' selon le manifeste."
                         )
-                        res = await session.execute(stmt)
-                        if not res.scalar_one_or_none():
-                            raise BusinessRuleViolation(
-                                f"BR-001: La zone géographique '{zone_id}' n'appartient pas à la paroisse '{paroisse_id}' selon le manifeste."
-                            )
 
-    def _format_instance_output(self, instance: Any, entity_def: EntityDefinition) -> dict[str, Any]:
-        """Formats an ORM instance output back into semantic attribute key names."""
-        row_dict = {}
+    def _format_dict_output(self, row_dict: dict[str, Any], entity_def: EntityDefinition) -> dict[str, Any]:
+        """Formats a database mapping row output back into semantic attribute key names."""
+        output = {}
         for attr_key, attr_def in entity_def.attributes.items():
             col_name = attr_def.column
-            if hasattr(instance, col_name):
-                val = getattr(instance, col_name)
-                row_dict[attr_key] = str(val) if isinstance(val, (uuid.UUID, datetime.date)) else val
+            if col_name in row_dict:
+                val = row_dict[col_name]
+                output[attr_key] = str(val) if isinstance(val, (uuid.UUID, datetime.date)) else val
 
-        if hasattr(instance, entity_def.storage.id):
-            id_val = getattr(instance, entity_def.storage.id)
-            row_dict[entity_def.storage.id] = str(id_val) if isinstance(id_val, (uuid.UUID, datetime.date)) else id_val
+        pk_col = entity_def.storage.id
+        if pk_col in row_dict:
+            val = row_dict[pk_col]
+            output[pk_col] = str(val) if isinstance(val, (uuid.UUID, datetime.date)) else val
 
-        return row_dict
+        return output

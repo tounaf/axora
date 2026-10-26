@@ -1,52 +1,51 @@
+import datetime
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from axora.data.models import Base, Membre, Paroisse, ZoneGeographique
+from axora.data.dynamic_models import build_dynamic_tables, metadata
+from axora.data.mutation_engine import MutationEngine
 from axora.data.query_engine import QueryEngine
 from axora.semantic.service import SemanticModelService
 from axora.tools.query_data import QueryDataTool
-import datetime
 
 YAML_PATH = "src/axora/semantic/definitions/gestion_paroissiale.yaml"
 
 
 @pytest_asyncio.fixture
 async def in_memory_db():
+    semantic_service = SemanticModelService.from_yaml(YAML_PATH)
+    build_dynamic_tables(semantic_service)
+
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(metadata.create_all)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    mutation_engine = MutationEngine(semantic_service)
 
     async with session_factory() as session:
-        p1 = Paroisse(nom="Andranovelona")
-        session.add(p1)
-        await session.flush()
+        async with session.begin():
+            p1 = await mutation_engine.create_record(session, "Paroisse", {"nom": "Andranovelona"})
+            z1 = await mutation_engine.create_record(session, "ZoneGeographique", {"paroisse_id": p1["id"], "nom": "Andoharanofotsy"})
 
-        z1 = ZoneGeographique(paroisse_id=p1.id, nom="Andoharanofotsy")
-        session.add(z1)
-        await session.flush()
-
-        m1 = Membre(
-            paroisse_id=p1.id,
-            zone_geographique_id=z1.id,
-            nom="Rabe",
-            prenom="Jean",
-            sexe="HOMME",
-            date_naissance=datetime.date(1995, 5, 10),
-            statut_matrimonial="CELIBATAIRE",
-        )
-        m2 = Membre(
-            paroisse_id=p1.id,
-            zone_geographique_id=z1.id,
-            nom="Rasoa",
-            prenom="Marie",
-            sexe="FEMME",
-            date_naissance=datetime.date(1998, 8, 15),
-            statut_matrimonial="CELIBATAIRE",
-        )
-        session.add_all([m1, m2])
-        await session.commit()
+            await mutation_engine.create_record(session, "Membre", {
+                "paroisse_id": p1["id"],
+                "zone_geographique_id": z1["id"],
+                "nom": "Rabe",
+                "prenom": "Jean",
+                "sexe": "HOMME",
+                "date_naissance": "1995-05-10",
+                "statut_matrimonial": "CELIBATAIRE",
+            })
+            await mutation_engine.create_record(session, "Membre", {
+                "paroisse_id": p1["id"],
+                "zone_geographique_id": z1["id"],
+                "nom": "Rasoa",
+                "prenom": "Marie",
+                "sexe": "FEMME",
+                "date_naissance": "1998-08-15",
+                "statut_matrimonial": "CELIBATAIRE",
+            })
 
     yield session_factory
     await engine.dispose()

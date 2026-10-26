@@ -3,7 +3,7 @@ import uuid
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from axora.data.models import Base, Paroisse, ZoneGeographique
+from axora.data.dynamic_models import build_dynamic_tables, metadata
 from axora.data.mutation_engine import BusinessRuleViolation, MutationEngine
 from axora.semantic.service import SemanticModelService
 from axora.tools.create_record import CreateRecordTool
@@ -14,24 +14,25 @@ YAML_PATH = "src/axora/semantic/definitions/gestion_paroissiale.yaml"
 
 @pytest_asyncio.fixture
 async def in_memory_db():
+    semantic_service = SemanticModelService.from_yaml(YAML_PATH)
+    build_dynamic_tables(semantic_service)
+
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(metadata.create_all)
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    mutation_engine = MutationEngine(semantic_service)
 
     async with session_factory() as session:
-        p1 = Paroisse(nom="Andranovelona")
-        p2 = Paroisse(nom="Analamanga")
-        session.add_all([p1, p2])
-        await session.flush()
+        async with session.begin():
+            p1 = await mutation_engine.create_record(session, "Paroisse", {"nom": "Andranovelona"})
+            p2 = await mutation_engine.create_record(session, "Paroisse", {"nom": "Analamanga"})
 
-        z1 = ZoneGeographique(paroisse_id=p1.id, nom="Andoharanofotsy")
-        z2 = ZoneGeographique(paroisse_id=p2.id, nom="ZoneAutre")
-        session.add_all([z1, z2])
-        await session.commit()
+            z1 = await mutation_engine.create_record(session, "ZoneGeographique", {"paroisse_id": p1["id"], "nom": "Andoharanofotsy"})
+            z2 = await mutation_engine.create_record(session, "ZoneGeographique", {"paroisse_id": p2["id"], "nom": "ZoneAutre"})
 
-        p1_id, p2_id, z1_id, z2_id = p1.id, p2.id, z1.id, z2.id
+            p1_id, p2_id, z1_id, z2_id = p1["id"], p2["id"], z1["id"], z2["id"]
 
     yield session_factory, p1_id, p2_id, z1_id, z2_id
     await engine.dispose()
@@ -48,21 +49,22 @@ async def test_create_membre_success(in_memory_db, semantic_service):
     engine = MutationEngine(semantic_service)
 
     async with session_factory() as session:
-        record = await engine.create_record(
-            session=session,
-            entity_name="Membre",
-            payload={
-                "paroisse_id": p1_id,
-                "zone_geographique_id": z1_id,
-                "nom": "Rakoto",
-                "prenom": "Paul",
-                "sexe": "HOMME",
-                "date_naissance": datetime.date(1990, 1, 1),
-                "statut_matrimonial": "MARIE",
-            },
-        )
-        assert "id" in record
-        assert record["nom"] == "Rakoto"
+        async with session.begin():
+            record = await engine.create_record(
+                session=session,
+                entity_name="Membre",
+                payload={
+                    "paroisse_id": p1_id,
+                    "zone_geographique_id": z1_id,
+                    "nom": "Rakoto",
+                    "prenom": "Paul",
+                    "sexe": "HOMME",
+                    "date_naissance": "1990-01-01",
+                    "statut_matrimonial": "MARIE",
+                },
+            )
+            assert "id" in record
+            assert record["nom"] == "Rakoto"
 
 
 @pytest.mark.asyncio
@@ -82,7 +84,7 @@ async def test_create_membre_zone_mismatch_rule_violation(in_memory_db, semantic
                     "nom": "Rasoa",
                     "prenom": "Liva",
                     "sexe": "FEMME",
-                    "date_naissance": datetime.date(1995, 2, 2),
+                    "date_naissance": "1995-02-02",
                     "statut_matrimonial": "CELIBATAIRE",
                 },
             )
