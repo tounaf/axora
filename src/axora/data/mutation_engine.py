@@ -14,7 +14,7 @@ class BusinessRuleViolation(Exception):
 
 
 class MutationEngine:
-    """Engine responsible for dynamically validating business rules and executing create/update mutations based strictly on the Semantic Model Manifest without static ORM model classes."""
+    """Engine responsible for dynamically validating business rules and executing create/update mutations based strictly on the Semantic Model Manifest without hardcoded entity or column names."""
 
     def __init__(self, semantic_service: SemanticModelService) -> None:
         self._semantic_service = semantic_service
@@ -116,26 +116,54 @@ class MutationEngine:
         return mapped
 
     async def _validate_semantic_rules(self, session: AsyncSession, entity_def: EntityDefinition, mapped_payload: dict[str, Any]) -> None:
-        """Validates relational business constraints derived from semantic relationship metadata dynamically."""
+        """Validates relational business constraints derived 100% dynamically from semantic relationship metadata."""
         for rel_name, rel_def in entity_def.relationships.items():
+            if rel_def.cardinality != "many-to-one":
+                continue
+
             target_entity_def = self._semantic_service.get_entity_details(rel_def.target)
             if not target_entity_def:
                 continue
 
-            # Foreign key rule validation (e.g. ensuring child zone belongs to parent paroisse)
-            if entity_def.storage.table == "membre" and target_entity_def.storage.table == "zone_geographique":
-                zone_id = mapped_payload.get("zone_geographique_id")
-                paroisse_id = mapped_payload.get("paroisse_id")
-                if zone_id and paroisse_id:
-                    zone_table = get_dynamic_table("zone_geographique", self._semantic_service)
-                    stmt = select(zone_table).where(
-                        zone_table.c.id == zone_id,
-                        zone_table.c.paroisse_id == paroisse_id
+            # Determine column names dynamically from relationship definition and target entity storage
+            target_table_name = target_entity_def.storage.table
+            fk_col_direct = f"{target_table_name}_id"
+            fk_col_rel = f"{rel_name}_id"
+
+            fk_col = fk_col_direct if fk_col_direct in mapped_payload else (fk_col_rel if fk_col_rel in mapped_payload else None)
+            if not fk_col:
+                continue
+
+            target_fk_val = mapped_payload.get(fk_col)
+            if not target_fk_val:
+                continue
+
+            # Inspect secondary relationships of the target entity to verify hierarchical parent/child integrity
+            for target_rel_name, target_rel_def in target_entity_def.relationships.items():
+                if target_rel_def.cardinality != "many-to-one":
+                    continue
+
+                parent_entity_def = self._semantic_service.get_entity_details(target_rel_def.target)
+                if not parent_entity_def:
+                    continue
+
+                parent_table_name = parent_entity_def.storage.table
+                parent_fk_col = f"{parent_table_name}_id"
+
+                if parent_fk_col in mapped_payload:
+                    expected_parent_val = mapped_payload[parent_fk_col]
+
+                    # Verify target entity row in database matches the expected parent FK
+                    target_table_obj = get_dynamic_table(target_table_name, self._semantic_service)
+                    stmt = select(target_table_obj).where(
+                        target_table_obj.c[target_entity_def.storage.id] == target_fk_val,
+                        target_table_obj.c[parent_fk_col] == expected_parent_val
                     )
                     res = await session.execute(stmt)
                     if not res.fetchone():
                         raise BusinessRuleViolation(
-                            f"BR-001: La zone géographique '{zone_id}' n'appartient pas à la paroisse '{paroisse_id}' selon le manifeste."
+                            f"BR-001: L'enregistrement '{target_entity_def.storage.table}' ({target_fk_val}) "
+                            f"n'est pas rattaché à l'entité parente '{parent_entity_def.storage.table}' ({expected_parent_val}) selon le manifeste."
                         )
 
     def _format_dict_output(self, row_dict: dict[str, Any], entity_def: EntityDefinition) -> dict[str, Any]:
