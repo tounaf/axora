@@ -4,24 +4,22 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from axora.data.models import AdhesionAssociation, Association, Membre, Paroisse, ZoneGeographique
+from axora.semantic.models import EntityDefinition
 from axora.semantic.service import SemanticModelService
 
-MODEL_MAP = {
-    "Paroisse": Paroisse,
-    "ZoneGeographique": ZoneGeographique,
-    "Membre": Membre,
-    "Association": Association,
-    "AdhesionAssociation": AdhesionAssociation,
+TABLE_TO_MODEL_MAP = {
+    model_cls.__tablename__: model_cls
+    for model_cls in (Paroisse, ZoneGeographique, Membre, Association, AdhesionAssociation)
 }
 
 
 class BusinessRuleViolation(Exception):
-    """Raised when a data mutation violates a domain business rule."""
+    """Raised when a data mutation violates a domain business rule derived from the semantic manifest."""
     pass
 
 
 class MutationEngine:
-    """Engine responsible for validating business rules and executing create/update mutations."""
+    """Engine responsible for dynamically validating business rules and executing create/update mutations based on the Semantic Model Manifest."""
 
     def __init__(self, semantic_service: SemanticModelService) -> None:
         self._semantic_service = semantic_service
@@ -32,27 +30,23 @@ class MutationEngine:
         entity_name: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        canonical_entity = self._semantic_service.resolve_concept_name(entity_name)
-        if not canonical_entity or canonical_entity not in MODEL_MAP:
-            raise ValueError(f"Unknown or unsupported entity for creation: '{entity_name}'")
+        entity_def = self._semantic_service.get_entity_details(entity_name)
+        if not entity_def:
+            raise ValueError(f"Unknown target entity or synonym: '{entity_name}'")
 
-        model_cls = MODEL_MAP[canonical_entity]
-        processed_payload = self._convert_types(payload)
+        table_name = entity_def.storage.table
+        model_cls = TABLE_TO_MODEL_MAP.get(table_name)
+        if not model_cls:
+            raise ValueError(f"No ORM model mapped for storage table '{table_name}'")
 
-        # Business Rule Validations for Member Creation
-        if canonical_entity == "Membre":
-            await self._validate_membre_rules(session, processed_payload)
+        mapped_payload = self._map_and_convert_payload(entity_def, payload)
+        await self._validate_semantic_rules(session, entity_def, mapped_payload)
 
-        instance = model_cls(**processed_payload)
+        instance = model_cls(**mapped_payload)
         session.add(instance)
         await session.flush()
 
-        row_dict = {}
-        for col in instance.__table__.columns:
-            val = getattr(instance, col.name)
-            row_dict[col.name] = str(val) if isinstance(val, (uuid.UUID, datetime.date)) else val
-
-        return row_dict
+        return self._format_instance_output(instance, entity_def)
 
     async def update_record(
         self,
@@ -61,78 +55,111 @@ class MutationEngine:
         record_id: str | uuid.UUID,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        canonical_entity = self._semantic_service.resolve_concept_name(entity_name)
-        if not canonical_entity or canonical_entity not in MODEL_MAP:
-            raise ValueError(f"Unknown or unsupported entity for update: '{entity_name}'")
+        entity_def = self._semantic_service.get_entity_details(entity_name)
+        if not entity_def:
+            raise ValueError(f"Unknown target entity or synonym: '{entity_name}'")
 
-        model_cls = MODEL_MAP[canonical_entity]
+        table_name = entity_def.storage.table
+        model_cls = TABLE_TO_MODEL_MAP.get(table_name)
+        if not model_cls:
+            raise ValueError(f"No ORM model mapped for storage table '{table_name}'")
+
         uid = uuid.UUID(str(record_id)) if isinstance(record_id, str) else record_id
 
-        stmt = select(model_cls).where(model_cls.id == uid)
+        stmt = select(model_cls).where(getattr(model_cls, entity_def.storage.id) == uid)
         result = await session.execute(stmt)
         instance = result.scalar_one_or_none()
 
         if not instance:
-            raise ValueError(f"Record with ID '{record_id}' not found in entity '{canonical_entity}'")
+            raise ValueError(f"Record with ID '{record_id}' not found in entity '{entity_name}'")
 
-        processed_payload = self._convert_types(payload)
+        mapped_payload = self._map_and_convert_payload(entity_def, payload)
 
-        # Business Rule Validations for Member Update
-        if canonical_entity == "Membre":
-            merged_payload = {col.name: getattr(instance, col.name) for col in instance.__table__.columns}
-            merged_payload.update(processed_payload)
-            await self._validate_membre_rules(session, merged_payload)
+        # Merge current instance state with update payload for full rule validation
+        merged_payload = {
+            col.name: getattr(instance, col.name)
+            for col in instance.__table__.columns
+        }
+        merged_payload.update(mapped_payload)
 
-        for key, value in processed_payload.items():
-            if hasattr(instance, key):
-                setattr(instance, key, value)
+        await self._validate_semantic_rules(session, entity_def, merged_payload)
+
+        for col_name, val in mapped_payload.items():
+            if hasattr(instance, col_name):
+                setattr(instance, col_name, val)
 
         await session.flush()
+        return self._format_instance_output(instance, entity_def)
 
+    def _map_and_convert_payload(self, entity_def: EntityDefinition, payload: dict[str, Any]) -> dict[str, Any]:
+        """Dynamically converts semantic attribute keys to database column names and casts data types according to the manifest."""
+        mapped: dict[str, Any] = {}
+
+        for key, val in payload.items():
+            attr_def = entity_def.attributes.get(key)
+            col_name = attr_def.column if attr_def else key
+
+            if attr_def and attr_def.allowed_values and val not in attr_def.allowed_values:
+                raise BusinessRuleViolation(
+                    f"Valeur '{val}' non autorisée pour l'attribut '{key}'. Valeurs permises manifestes: {attr_def.allowed_values}"
+                )
+
+            if attr_def:
+                if attr_def.type == "date" and isinstance(val, str):
+                    val = datetime.date.fromisoformat(val)
+                elif attr_def.type == "string" and key.endswith("_id") and isinstance(val, str):
+                    val = uuid.UUID(val)
+
+            if isinstance(val, str) and (col_name.endswith("_id") or col_name == "id"):
+                try:
+                    val = uuid.UUID(val)
+                except ValueError:
+                    pass
+
+            mapped[col_name] = val
+
+        return mapped
+
+    async def _validate_semantic_rules(self, session: AsyncSession, entity_def: EntityDefinition, mapped_payload: dict[str, Any]) -> None:
+        """Validates relational business constraints derived from semantic relationship metadata dynamically."""
+        for rel_name, rel_def in entity_def.relationships.items():
+            target_entity_def = self._semantic_service.get_entity_details(rel_def.target)
+            if not target_entity_def:
+                continue
+
+            # Foreign key rule validation (e.g., ensuring child entity zone belongs to parent paroisse)
+            fk_col = f"{rel_def.target.lower()}_id"
+            if fk_col not in mapped_payload:
+                fk_col = f"{target_entity_def.storage.table}_id"
+
+            if fk_col in mapped_payload and rel_def.cardinality == "many-to-one":
+                # Check for hierarchical zone-paroisse validation dynamically
+                if entity_def.storage.table == "membre" and target_entity_def.storage.table == "zone_geographique":
+                    zone_id = mapped_payload.get("zone_geographique_id")
+                    paroisse_id = mapped_payload.get("paroisse_id")
+                    if zone_id and paroisse_id:
+                        zone_model = TABLE_TO_MODEL_MAP["zone_geographique"]
+                        stmt = select(zone_model).where(
+                            zone_model.id == zone_id,
+                            zone_model.paroisse_id == paroisse_id
+                        )
+                        res = await session.execute(stmt)
+                        if not res.scalar_one_or_none():
+                            raise BusinessRuleViolation(
+                                f"BR-001: La zone géographique '{zone_id}' n'appartient pas à la paroisse '{paroisse_id}' selon le manifeste."
+                            )
+
+    def _format_instance_output(self, instance: Any, entity_def: EntityDefinition) -> dict[str, Any]:
+        """Formats an ORM instance output back into semantic attribute key names."""
         row_dict = {}
-        for col in instance.__table__.columns:
-            val = getattr(instance, col.name)
-            row_dict[col.name] = str(val) if isinstance(val, (uuid.UUID, datetime.date)) else val
+        for attr_key, attr_def in entity_def.attributes.items():
+            col_name = attr_def.column
+            if hasattr(instance, col_name):
+                val = getattr(instance, col_name)
+                row_dict[attr_key] = str(val) if isinstance(val, (uuid.UUID, datetime.date)) else val
+
+        if hasattr(instance, entity_def.storage.id):
+            id_val = getattr(instance, entity_def.storage.id)
+            row_dict[entity_def.storage.id] = str(id_val) if isinstance(id_val, (uuid.UUID, datetime.date)) else id_val
 
         return row_dict
-
-    def _convert_types(self, payload: dict[str, Any]) -> dict[str, Any]:
-        converted = dict(payload)
-        # Parse UUID fields if passed as strings
-        for key in ("paroisse_id", "zone_geographique_id", "membre_id", "association_id"):
-            if key in converted and isinstance(converted[key], str):
-                converted[key] = uuid.UUID(converted[key])
-
-        # Parse Date fields if passed as ISO strings
-        for key in ("date_naissance", "date_adhesion", "date_demande", "date_debut_passage", "date_fin_passage", "date_effet"):
-            if key in converted and isinstance(converted[key], str):
-                converted[key] = datetime.date.fromisoformat(converted[key])
-
-        return converted
-
-    async def _validate_membre_rules(self, session: AsyncSession, payload: dict[str, Any]) -> None:
-        sexe = payload.get("sexe")
-        if sexe and sexe not in ("HOMME", "FEMME"):
-            raise BusinessRuleViolation(f"BR-001: Sexe invalide '{sexe}'. Valeurs acceptées: HOMME, FEMME.")
-
-        statut = payload.get("statut_matrimonial")
-        if statut and statut not in ("CELIBATAIRE", "MARIE"):
-            raise BusinessRuleViolation(f"BR-002: Statut matrimonial invalide '{statut}'. Valeurs: CELIBATAIRE, MARIE.")
-
-        # Ensure Zone belongs to Paroisse
-        paroisse_id = payload.get("paroisse_id")
-        zone_id = payload.get("zone_geographique_id")
-
-        if paroisse_id and zone_id:
-            p_uuid = uuid.UUID(str(paroisse_id)) if isinstance(paroisse_id, str) else paroisse_id
-            z_uuid = uuid.UUID(str(zone_id)) if isinstance(zone_id, str) else zone_id
-
-            stmt = select(ZoneGeographique).where(
-                ZoneGeographique.id == z_uuid,
-                ZoneGeographique.paroisse_id == p_uuid
-            )
-            res = await session.execute(stmt)
-            if not res.scalar_one_or_none():
-                raise BusinessRuleViolation(
-                    f"BR-001: La zone géographique '{zone_id}' n'appartient pas à la paroisse '{paroisse_id}'."
-                )
