@@ -1,6 +1,6 @@
 import pytest
 from axora.agent.decisions import AgentDecision, ToolCall
-from axora.llm.provider import MockLLMAdapter, OpenAILLMAdapter, get_llm_adapter
+from axora.llm.provider import MockLLMAdapter, NvidiaLLMAdapter, OpenAILLMAdapter, get_llm_adapter
 
 
 @pytest.mark.asyncio
@@ -57,9 +57,24 @@ async def test_openai_llm_adapter_fallback():
     assert decision.type in ("call_tool", "final_answer")
 
 
+@pytest.mark.asyncio
+async def test_nvidia_llm_adapter_fallback():
+    # NVIDIA adapter should fallback gracefully to mock behavior when key is missing/placeholder
+    adapter = NvidiaLLMAdapter(api_key="nvapi-your-key-here", model="meta/llama-3.1-70b-instruct")
+    assert adapter.provider_name == "nvidia"
+    assert adapter.model_name == "meta/llama-3.1-70b-instruct"
+
+    decision = await adapter.decide("Qui sont les membres ?")
+    assert isinstance(decision, AgentDecision)
+    assert decision.type in ("call_tool", "final_answer")
+
+
 def test_get_llm_adapter_factory():
     mock_adapter = get_llm_adapter("mock")
     assert mock_adapter.provider_name == "mock"
 
     openai_adapter = get_llm_adapter("openai")
     assert openai_adapter.provider_name == "openai"
+
+    nvidia_adapter = get_llm_adapter("nvidia")
+    assert nvidia_adapter.provider_name == "nvidia"

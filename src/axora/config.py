@@ -18,9 +18,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@db:5432/axora"
 
     # LLM Settings
-    LLM_PROVIDER: str = "mock"
+    LLM_PROVIDER: str = "mock"  # Options: openai, nvidia, anthropic, ollama, mock
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4o-mini"
+
+    # NVIDIA NIM Specific Settings (Free API Tokens)
+    NVIDIA_API_KEY: str = ""
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NVIDIA_MODEL: str = "meta/llama-3.1-70b-instruct"
 
     # Agent Loop Settings
     MAX_AGENT_ITERATIONS: int = 8

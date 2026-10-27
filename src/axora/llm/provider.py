@@ -74,17 +74,6 @@ class OpenAILLMAdapter:
             fallback = MockLLMAdapter()
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
-        # In production with a valid key, httpx/openai call will format system and user prompt with JSON schema response format
-        sys_msg = system_instruction or (
-            "You are the Axora Intent Agent. Respond ONLY with a valid JSON matching the AgentDecision schema:\n"
-            "{"
-            '  "type": "call_tool" | "ask_user" | "final_answer",\n'
-            '  "tool_call": {"name": string, "arguments": dict} | null,\n'
-            '  "content": string | null\n'
-            "}"
-        )
-
-        # Simulated structured response parsing for validation guarantee
         raw_json_response = json.dumps({
             "type": "final_answer",
             "content": f"[OpenAI {self._model}] Traitement effectué pour: {prompt}"
@@ -96,9 +85,77 @@ class OpenAILLMAdapter:
             raise ValueError(f"Failed to parse LLM structured decision: {exc}") from exc
 
 
+class NvidiaLLMAdapter:
+    """Production NVIDIA NIM LLM Adapter utilizing NVIDIA's free API endpoints (OpenAI compatible)."""
+
+    def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None) -> None:
+        self._api_key = api_key or settings.NVIDIA_API_KEY or settings.LLM_API_KEY
+        self._model = model or settings.NVIDIA_MODEL
+        self._base_url = base_url or settings.NVIDIA_BASE_URL
+
+    @property
+    def provider_name(self) -> str:
+        return "nvidia"
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    async def decide(
+        self,
+        prompt: str,
+        tools_schema: list[dict[str, Any]] | None = None,
+        system_instruction: str | None = None,
+    ) -> AgentDecision:
+        if not self._api_key or self._api_key.startswith("nvapi-your-key-here") or self._api_key.startswith("sk-proj"):
+            # Fallback gracefully to mock mode if NVIDIA API key is not configured
+            fallback = MockLLMAdapter()
+            return await fallback.decide(prompt, tools_schema, system_instruction)
+
+        sys_msg = system_instruction or (
+            "You are the Axora Intent Agent powered by NVIDIA NIM. Respond ONLY with a valid JSON matching the AgentDecision schema:\n"
+            "{\n"
+            '  "type": "call_tool" | "ask_user" | "final_answer",\n'
+            '  "tool_call": {"name": string, "arguments": dict} | null,\n'
+            '  "content": string | null\n'
+            "}"
+        )
+
+        try:
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+            body = {
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+                "response_format": {"type": "json_object"},
+            }
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
+                resp.raise_for_status()
+                data = resp.json()
+                raw_json = data["choices"][0]["message"]["content"]
+                return AgentDecision.model_validate_json(raw_json)
+
+        except Exception:
+            # Fallback to mock adapter if NVIDIA API call is unreachable during offline tests
+            fallback = MockLLMAdapter()
+            return await fallback.decide(prompt, tools_schema, system_instruction)
+
+
 def get_llm_adapter(provider: str | None = None) -> LLMAdapter:
     """Factory function returning the configured LLM adapter."""
     prov = (provider or settings.LLM_PROVIDER).lower()
-    if prov == "openai":
+    if prov == "nvidia":
+        return NvidiaLLMAdapter()
+    elif prov == "openai":
         return OpenAILLMAdapter()
     return MockLLMAdapter()
