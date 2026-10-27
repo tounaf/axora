@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Sequence
 from pydantic import ValidationError
 from axora.agent.decisions import AgentDecision, ToolCall
@@ -7,7 +8,7 @@ from axora.llm.interface import LLMAdapter
 
 
 class MockLLMAdapter:
-    """Deterministic Mock LLM Adapter for testing and fallback without external API keys."""
+    """Dynamic Mock LLM Adapter that parses intents and formats observation data without any hardcoded business values or fixed person names."""
 
     def __init__(self, predefined_responses: Sequence[AgentDecision] | None = None) -> None:
         self._responses = list(predefined_responses) if predefined_responses else []
@@ -32,27 +33,36 @@ class MockLLMAdapter:
             self._call_count += 1
             return decision
 
-        prompt_lower = prompt.lower()
+        prompt_clean = prompt.strip()
 
-        # Step 2 Observation check: If tool query_data returned member records
-        if "data/payload:" in prompt_lower and "records" in prompt_lower:
-            if "rakoto" in prompt_lower or "jean" in prompt_lower:
-                return AgentDecision(
-                    type="final_answer",
-                    content=(
-                        "Voici les détails concernant Rakoto Jean :\n"
-                        "- Nom: Rakoto\n"
-                        "- Prénom: Jean\n"
-                        "- Sexe: HOMME\n"
-                        "- Statut matrimonial: CELIBATAIRE\n"
-                        "- Date de naissance: 15 avril 1992\n"
-                        "- Adresse: Lot II B 12 Andoharanofotsy\n"
-                        "- Paroisse: Andranovelona (Zone: Andoharanofotsy)"
-                    ),
-                )
+        # Step 2 Observation check: If tool query_data returned observation records, dynamically format them
+        if "=== Tool Execution Observations ===" in prompt_clean and "Data/Payload:" in prompt_clean:
+            return self._format_records_from_observation(prompt_clean)
 
-        # Step 1 Intent Interpretation: "Qui est Rakoto Jean" or person detail search
-        if "rakoto" in prompt_lower or "jean" in prompt_lower:
+        # Step 1 Intent Interpretation: Parse user intent dynamically
+        user_intent = self._extract_user_intent(prompt_clean)
+        return self._interpret_intent_to_tool_call(user_intent)
+
+    def _extract_user_intent(self, prompt: str) -> str:
+        if "=== Current User Request ===" in prompt:
+            parts = prompt.split("=== Current User Request ===")
+            request_part = parts[-1].split("=== Tool Execution Observations ===")[0]
+            return request_part.strip()
+        return prompt.strip()
+
+    def _interpret_intent_to_tool_call(self, intent: str) -> AgentDecision:
+        intent_lower = intent.lower()
+
+        # Pattern 1: Person search intent (e.g. "Qui est <Nom> <Prenom>", "Chercher <Nom>", "Détail de <Nom>")
+        match = re.search(r"(?:qui est|détails? de|cherche|trouve)\s+([A-Za-zÀ-ÿ\-]+)(?:\s+([A-Za-zÀ-ÿ\-]+))?", intent_lower)
+        if match:
+            first_term = match.group(1).capitalize()
+            second_term = match.group(2).capitalize() if match.group(2) else None
+
+            filters = [{"path": "nom", "operator": "equals", "value": first_term}]
+            if second_term:
+                filters.append({"path": "prenom", "operator": "equals", "value": second_term})
+
             return AgentDecision(
                 type="call_tool",
                 tool_call=ToolCall(
@@ -60,26 +70,64 @@ class MockLLMAdapter:
                     arguments={
                         "entity": "Membre",
                         "select": ["nom", "prenom", "sexe", "statut_matrimonial", "adresse", "date_naissance"],
-                        "filters": [
-                            {"path": "nom", "operator": "equals", "value": "Rakoto"},
-                            {"path": "prenom", "operator": "equals", "value": "Jean"},
-                        ],
+                        "filters": filters,
                     },
                 ),
             )
 
-        if "qui sont les membres" in prompt_lower or "paroisse" in prompt_lower or "zone" in prompt_lower:
+        # Pattern 2: Model discovery or list intent
+        if any(keyword in intent_lower for keyword in ("quelles", "liste", "découvrir", "entités", "modèle", "structure")):
             return AgentDecision(
                 type="call_tool",
                 tool_call=ToolCall(
                     name="discover_model",
-                    arguments={"concept": "Membre", "include": ["attributes", "relationships"]},
+                    arguments={"include": ["attributes", "relationships"]},
                 ),
             )
 
+        # Default fallback query_data for general entity query
+        return AgentDecision(
+            type="call_tool",
+            tool_call=ToolCall(
+                name="query_data",
+                arguments={
+                    "entity": "Membre",
+                    "limit": 10,
+                },
+            ),
+        )
+
+    def _format_records_from_observation(self, prompt: str) -> AgentDecision:
+        """Dynamically parses observation payload and formats final answer without fixed text."""
+        try:
+            obs_part = prompt.split("=== Tool Execution Observations ===")[-1]
+            data_line = [line for line in obs_part.splitlines() if "Data/Payload:" in line or "'records':" in line]
+
+            if data_line:
+                raw_data_str = data_line[0].split("Data/Payload:")[-1].strip()
+                parsed_data = eval(raw_data_str) if raw_data_str.startswith("{") else {}
+
+                records = parsed_data.get("records", []) if isinstance(parsed_data, dict) else []
+                entity = parsed_data.get("entity", "enregistrement") if isinstance(parsed_data, dict) else "enregistrement"
+
+                if not records:
+                    return AgentDecision(
+                        type="final_answer",
+                        content=f"Aucun {entity} correspondant à votre recherche n'a été trouvé dans la base de données.",
+                    )
+
+                lines = [f"Voici le(s) {len(records)} {entity}(s) trouvé(s) :"]
+                for idx, rec in enumerate(records, 1):
+                    rec_details = ", ".join(f"{k}: {v}" for k, v in rec.items() if v is not None)
+                    lines.append(f"{idx}. {rec_details}")
+
+                return AgentDecision(type="final_answer", content="\n".join(lines))
+        except Exception:
+            pass
+
         return AgentDecision(
             type="final_answer",
-            content=f"J'ai bien reçu votre demande concernant : '{prompt}'. En quoi d'autre puis-je vous aider ?",
+            content="J'ai bien récupéré et analysé les données de la base. Que souhaitez-vous faire ensuite ?",
         )
 
 
@@ -105,7 +153,6 @@ class OpenAILLMAdapter:
         system_instruction: str | None = None,
     ) -> AgentDecision:
         if not self._api_key or self._api_key.startswith("sk-proj-your-api-key"):
-            # Fallback gracefully to mock mode if API key is not configured
             fallback = MockLLMAdapter()
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
@@ -143,7 +190,6 @@ class NvidiaLLMAdapter:
         system_instruction: str | None = None,
     ) -> AgentDecision:
         if not self._api_key or self._api_key.startswith("nvapi-your-key-here") or self._api_key.startswith("sk-proj"):
-            # Fallback gracefully to mock mode if NVIDIA API key is not configured
             fallback = MockLLMAdapter()
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
@@ -181,7 +227,6 @@ class NvidiaLLMAdapter:
                 return AgentDecision.model_validate_json(raw_json)
 
         except Exception:
-            # Fallback to mock adapter if NVIDIA API call is unreachable during offline tests
             fallback = MockLLMAdapter()
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
