@@ -33,6 +33,41 @@ class MockLLMAdapter:
             return decision
 
         prompt_lower = prompt.lower()
+
+        # Step 2 Observation check: If tool query_data returned member records
+        if "data/payload:" in prompt_lower and "records" in prompt_lower:
+            if "rakoto" in prompt_lower or "jean" in prompt_lower:
+                return AgentDecision(
+                    type="final_answer",
+                    content=(
+                        "Voici les détails concernant Rakoto Jean :\n"
+                        "- Nom: Rakoto\n"
+                        "- Prénom: Jean\n"
+                        "- Sexe: HOMME\n"
+                        "- Statut matrimonial: CELIBATAIRE\n"
+                        "- Date de naissance: 15 avril 1992\n"
+                        "- Adresse: Lot II B 12 Andoharanofotsy\n"
+                        "- Paroisse: Andranovelona (Zone: Andoharanofotsy)"
+                    ),
+                )
+
+        # Step 1 Intent Interpretation: "Qui est Rakoto Jean" or person detail search
+        if "rakoto" in prompt_lower or "jean" in prompt_lower:
+            return AgentDecision(
+                type="call_tool",
+                tool_call=ToolCall(
+                    name="query_data",
+                    arguments={
+                        "entity": "Membre",
+                        "select": ["nom", "prenom", "sexe", "statut_matrimonial", "adresse", "date_naissance"],
+                        "filters": [
+                            {"path": "nom", "operator": "equals", "value": "Rakoto"},
+                            {"path": "prenom", "operator": "equals", "value": "Jean"},
+                        ],
+                    },
+                ),
+            )
+
         if "qui sont les membres" in prompt_lower or "paroisse" in prompt_lower or "zone" in prompt_lower:
             return AgentDecision(
                 type="call_tool",
@@ -44,7 +79,7 @@ class MockLLMAdapter:
 
         return AgentDecision(
             type="final_answer",
-            content=f"J'ai bien reçu votre demande : '{prompt}'. En quoi d'autre puis-je vous aider ?",
+            content=f"J'ai bien reçu votre demande concernant : '{prompt}'. En quoi d'autre puis-je vous aider ?",
         )
 
 

@@ -3,10 +3,15 @@ import sys
 from pathlib import Path
 from axora.agent.runtime import AgentRuntime
 from axora.config import settings
+from axora.data.database import AsyncSessionLocal
+from axora.data.dynamic_models import build_dynamic_tables
 from axora.llm.provider import get_llm_adapter
 from axora.semantic.service import SemanticModelService
+from axora.tools.create_record import CreateRecordTool
 from axora.tools.discover_model import DiscoverModelTool
+from axora.tools.query_data import QueryDataTool
 from axora.tools.registry import ToolRegistry
+from axora.tools.update_record import UpdateRecordTool
 
 
 async def run_cli():
@@ -14,7 +19,7 @@ async def run_cli():
     print("   AXORA INTERACTIVE CLI — From intent to action.")
     print("=" * 60)
     print(f"[*] Loaded Provider: {settings.LLM_PROVIDER}")
-    print(f"[*] Loaded Model:    {settings.LLM_MODEL}")
+    print(f"[*] Loaded Model:    {settings.LLM_MODEL if settings.LLM_PROVIDER != 'nvidia' else settings.NVIDIA_MODEL}")
 
     yaml_path = Path("src/axora/semantic/definitions/gestion_paroissiale.yaml")
     if not yaml_path.is_file():
@@ -22,8 +27,13 @@ async def run_cli():
         sys.exit(1)
 
     semantic_service = SemanticModelService.from_yaml(yaml_path)
+    build_dynamic_tables(semantic_service)
+
     registry = ToolRegistry()
     registry.register(DiscoverModelTool(semantic_service))
+    registry.register(QueryDataTool(semantic_service, AsyncSessionLocal))
+    registry.register(CreateRecordTool(semantic_service, AsyncSessionLocal))
+    registry.register(UpdateRecordTool(semantic_service, AsyncSessionLocal))
 
     llm_adapter = get_llm_adapter()
     runtime = AgentRuntime(tool_registry=registry, llm_adapter=llm_adapter)
