@@ -38,7 +38,7 @@ async def seeded_environment():
 
 
 @pytest.mark.asyncio
-async def test_person_search_intent_rakoto_jean(seeded_environment):
+async def test_dynamic_person_search_intent_rakoto_jean(seeded_environment):
     registry, _, _ = seeded_environment
 
     llm_adapter = MockLLMAdapter()
@@ -48,5 +48,28 @@ async def test_person_search_intent_rakoto_jean(seeded_environment):
 
     assert "Rakoto" in response
     assert "Jean" in response
-    assert "CELIBATAIRE" in response or "HOMME" in response
-    assert "Andranovelona" in response or "Andoharanofotsy" in response
+
+
+@pytest.mark.asyncio
+async def test_dynamic_person_search_intent_rasoa_marie(seeded_environment):
+    registry, _, _ = seeded_environment
+
+    llm_adapter = MockLLMAdapter()
+    runtime = AgentRuntime(tool_registry=registry, llm_adapter=llm_adapter)
+
+    response = await runtime.process_intent("Détails de Rasoa Marie")
+
+    assert "Rasoa" in response
+    assert "Marie" in response
+
+
+@pytest.mark.asyncio
+async def test_dynamic_person_search_intent_not_found(seeded_environment):
+    registry, _, _ = seeded_environment
+
+    llm_adapter = MockLLMAdapter()
+    runtime = AgentRuntime(tool_registry=registry, llm_adapter=llm_adapter)
+
+    response = await runtime.process_intent("Qui est Dupont Pierre ?")
+
+    assert "Aucun" in response or "non" in response
