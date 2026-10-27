@@ -1,8 +1,10 @@
+import logging
 from typing import Any
-from sqlalchemy.ext.asyncio import AsyncSession
 from axora.data.query_engine import QueryEngine
 from axora.semantic.service import SemanticModelService
 from axora.tools.interface import ToolResult
+
+logger = logging.getLogger("axora.tools.query_data")
 
 
 class QueryDataTool:
@@ -62,7 +64,10 @@ class QueryDataTool:
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         entity = arguments.get("entity")
+        logger.info(f"[TOOL EXECUTING] query_data with arguments: {arguments}")
+
         if not entity:
+            logger.error("[TOOL ERROR] query_data missing required 'entity' parameter.")
             return ToolResult(status="error", error_code="MISSING_ENTITY", message="The 'entity' parameter is required.")
 
         select_fields = arguments.get("select")
@@ -78,6 +83,7 @@ class QueryDataTool:
                     filters=filters,
                     limit=limit,
                 )
+                logger.info(f"[TOOL SUCCESS] query_data retrieved {len(records)} records for entity '{entity}'.")
                 return ToolResult(
                     status="success",
                     data={
@@ -87,6 +93,7 @@ class QueryDataTool:
                     },
                 )
         except Exception as exc:
+            logger.exception(f"[TOOL EXECUTION EXCEPTION] query_data failed for entity '{entity}': {exc}")
             return ToolResult(
                 status="error",
                 error_code="QUERY_EXECUTION_ERROR",
