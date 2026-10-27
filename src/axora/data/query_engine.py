@@ -1,8 +1,11 @@
+import logging
 from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from axora.data.dynamic_models import get_dynamic_table
 from axora.semantic.service import SemanticModelService
+
+logger = logging.getLogger("axora.data.query_engine")
 
 
 class QueryEngine:
@@ -21,6 +24,7 @@ class QueryEngine:
     ) -> list[dict[str, Any]]:
         entity_def = self._semantic_service.get_entity_details(entity_name)
         if not entity_def:
+            logger.error(f"[QUERY ENGINE] Unknown entity name: '{entity_name}'")
             raise ValueError(f"Unknown target entity or synonym: '{entity_name}'")
 
         table_name = entity_def.storage.table
@@ -29,6 +33,8 @@ class QueryEngine:
         stmt = select(primary_table)
         joined_tables = set()
         filters = filters or []
+
+        logger.info(f"[QUERY ENGINE] Building SQL select for entity '{entity_name}' (table '{table_name}') with {len(filters)} filters.")
 
         for flt in filters:
             path = flt.get("path")
@@ -46,6 +52,7 @@ class QueryEngine:
                 if col_name in primary_table.c:
                     column = primary_table.c[col_name]
                     stmt = self._apply_filter(stmt, column, operator, value)
+                    logger.info(f"[QUERY ENGINE] Applied direct filter: {col_name} {operator} '{value}'")
 
             elif len(parts) == 2:
                 rel_name, target_attr = parts[0], parts[1]
@@ -58,7 +65,6 @@ class QueryEngine:
                         target_table = get_dynamic_table(target_table_name, self._semantic_service)
 
                         if target_table_name not in joined_tables and target_table_name != table_name:
-                            # Join dynamically on matching foreign key column name
                             fk_col_name = f"{target_table_name}_id"
                             if fk_col_name in primary_table.c and target_entity_def.storage.id in target_table.c:
                                 stmt = stmt.join(
@@ -74,12 +80,14 @@ class QueryEngine:
                                 stmt = stmt.join(target_table)
 
                             joined_tables.add(target_table_name)
+                            logger.info(f"[QUERY ENGINE] Joined table '{target_table_name}' via relationship '{rel_name}'")
 
                         target_attr_def = target_entity_def.attributes.get(target_attr)
                         col_name = target_attr_def.column if target_attr_def else target_attr
                         if col_name in target_table.c:
                             column = target_table.c[col_name]
                             stmt = self._apply_filter(stmt, column, operator, value)
+                            logger.info(f"[QUERY ENGINE] Applied relational filter: {target_table_name}.{col_name} {operator} '{value}'")
 
         stmt = stmt.limit(min(limit, 200))
         result = await session.execute(stmt)
@@ -105,6 +113,7 @@ class QueryEngine:
 
             output.append(row_dict)
 
+        logger.info(f"[QUERY ENGINE SUCCESS] Returning {len(output)} mapped records.")
         return output
 
     def _apply_filter(self, stmt, column, operator: str, value: Any):
