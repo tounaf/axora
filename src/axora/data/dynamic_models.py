@@ -1,7 +1,42 @@
 from typing import Any
-from sqlalchemy import Column, Date, Integer, MetaData, String, Table, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Date, MetaData, String, Table, Text
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.types import TypeDecorator, CHAR
+import uuid
 from axora.semantic.service import SemanticModelService
+
+
+class GUID(TypeDecorator):
+    """Platform-independent GUID type. Uses PostgreSQL's UUID type, otherwise uses CHAR(36), storing stringified UUID."""
+    impl = CHAR(36)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        else:
+            return dialect.type_descriptor(CHAR(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return str(value)
+        else:
+            if isinstance(value, uuid.UUID):
+                return str(value)
+            return str(uuid.UUID(str(value)))
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value
+        else:
+            if isinstance(value, uuid.UUID):
+                return str(value)
+            return str(uuid.UUID(str(value)))
+
 
 # Shared SQLAlchemy MetaData
 metadata = MetaData()
@@ -13,6 +48,10 @@ DYNAMIC_TABLES: dict[str, Table] = {}
 def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Table]:
     """Dynamically builds SQLAlchemy Table instances directly from the Semantic Model Manifest."""
     global DYNAMIC_TABLES
+
+    # Clear metadata and registry before building to prevent table collision issues across test runs
+    DYNAMIC_TABLES.clear()
+    metadata.clear()
 
     # Pass 1: Declare all tables with primary key, attributes, and relationship foreign keys
     for entity_name in semantic_service.get_entity_names():
@@ -27,9 +66,9 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
         added_cols = set()
         columns = []
 
-        # Primary Key Column (UUID)
+        # Primary Key Column (GUID)
         pk_name = entity_def.storage.id
-        columns.append(Column(pk_name, UUID(as_uuid=True), primary_key=True))
+        columns.append(Column(pk_name, GUID, primary_key=True))
         added_cols.add(pk_name)
 
         # Dynamic Attributes
@@ -41,7 +80,7 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
             if attr_def.type == "date":
                 columns.append(Column(col_name, Date, nullable=True))
             elif attr_def.type == "string" and col_name.endswith("_id"):
-                columns.append(Column(col_name, UUID(as_uuid=True), nullable=True))
+                columns.append(Column(col_name, GUID, nullable=True))
             elif attr_def.type == "string":
                 columns.append(Column(col_name, String(200), nullable=True))
             else:
@@ -58,7 +97,7 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
                     fk_col_2 = f"{rel_name}_id"
                     for fk in (fk_col_1, fk_col_2):
                         if fk not in added_cols:
-                            columns.append(Column(fk, UUID(as_uuid=True), nullable=True))
+                            columns.append(Column(fk, GUID, nullable=True))
                             added_cols.add(fk)
 
         table_obj = Table(table_name, metadata, *columns, extend_existing=True)
