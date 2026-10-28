@@ -88,3 +88,30 @@ def test_get_llm_adapter_factory():
 
     groq_adapter = get_llm_adapter("groq")
     assert groq_adapter.provider_name == "groq"
+
+
+@pytest.mark.asyncio
+async def test_groq_llm_adapter_custom_model():
+    adapter = GroqLLMAdapter(api_key="gsk_test", model="groq-custom-model")
+    assert adapter.provider_name == "groq"
+    assert adapter.model_name == "groq-custom-model"
+
+
+@pytest.mark.asyncio
+async def test_groq_llm_adapter_error_logging(caplog):
+    import httpx
+    from unittest.mock import MagicMock, patch
+
+    adapter = GroqLLMAdapter(api_key="gsk_valid_key_test", model="invalid-model")
+
+    mock_response = MagicMock()
+    mock_response.is_error = True
+    mock_response.status_code = 400
+    mock_response.text = '{"error": {"message": "Model invalid-model not found"}}'
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError("400 Bad Request", request=MagicMock(), response=mock_response)
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        decision = await adapter.decide("Test prompt")
+        assert decision is not None
+        assert "[GROQ LLM API ERROR] Status: 400" in caplog.text
+        assert "Model invalid-model not found" in caplog.text

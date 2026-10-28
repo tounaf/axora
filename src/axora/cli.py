@@ -15,11 +15,13 @@ from axora.tools.update_record import UpdateRecordTool
 
 
 async def run_cli():
+    llm_adapter = get_llm_adapter()
+
     print("=" * 60)
     print("   AXORA INTERACTIVE CLI — From intent to action.")
     print("=" * 60)
-    print(f"[*] Loaded Provider: {settings.LLM_PROVIDER}")
-    print(f"[*] Loaded Model:    {settings.LLM_MODEL if settings.LLM_PROVIDER != 'nvidia' else settings.NVIDIA_MODEL}")
+    print(f"[*] Loaded Provider: {llm_adapter.provider_name}")
+    print(f"[*] Loaded Model:    {llm_adapter.model_name}")
 
     yaml_path = Path("src/axora/semantic/definitions/gestion_paroissiale.yaml")
     if not yaml_path.is_file():
@@ -35,7 +37,6 @@ async def run_cli():
     registry.register(CreateRecordTool(semantic_service, AsyncSessionLocal))
     registry.register(UpdateRecordTool(semantic_service, AsyncSessionLocal))
 
-    llm_adapter = get_llm_adapter()
     runtime = AgentRuntime(tool_registry=registry, llm_adapter=llm_adapter)
 
     print(f"[*] Semantic Model:  {semantic_service.model_name} (v{semantic_service.version})")

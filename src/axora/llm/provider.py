@@ -183,7 +183,7 @@ class GroqLLMAdapter:
 
     def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None) -> None:
         self._api_key = api_key or settings.GROQ_API_KEY or settings.LLM_API_KEY
-        self._model = model or settings.GROQ_MODEL
+        self._model = model or settings.GROQ_MODEL or settings.LLM_MODEL
         self._base_url = base_url or settings.GROQ_BASE_URL
 
     @property
@@ -232,6 +232,11 @@ class GroqLLMAdapter:
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
+                if resp.is_error:
+                    logger.error(
+                        f"[GROQ LLM API ERROR] Status: {resp.status_code} | "
+                        f"Response: {resp.text}"
+                    )
                 resp.raise_for_status()
                 data = resp.json()
                 raw_json = data["choices"][0]["message"]["content"]
@@ -284,7 +289,7 @@ class NvidiaLLMAdapter:
 
     def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None) -> None:
         self._api_key = api_key or settings.NVIDIA_API_KEY or settings.LLM_API_KEY
-        self._model = model or settings.NVIDIA_MODEL
+        self._model = model or settings.NVIDIA_MODEL or settings.LLM_MODEL
         self._base_url = base_url or settings.NVIDIA_BASE_URL
 
     @property
@@ -334,6 +339,11 @@ class NvidiaLLMAdapter:
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
+                if resp.is_error:
+                    logger.error(
+                        f"[NVIDIA LLM API ERROR] Status: {resp.status_code} | "
+                        f"Response: {resp.text}"
+                    )
                 resp.raise_for_status()
                 data = resp.json()
                 raw_json = data["choices"][0]["message"]["content"]
