@@ -178,6 +178,20 @@ class MockLLMAdapter:
         )
 
 
+
+def _clean_json_text(text: str) -> str:
+    """Strips markdown code block wrappers from raw LLM output text."""
+    clean = text.strip()
+    if clean.startswith("```"):
+        lines = clean.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        clean = "\n".join(lines).strip()
+    return clean
+
+
 class GroqLLMAdapter:
     """Production Groq LLM Adapter utilizing Groq's ultra-fast free Cloud API endpoints (OpenAI compatible)."""
 
@@ -213,10 +227,15 @@ class GroqLLMAdapter:
             '  "content": string | null\n'
             "}"
         )
-        if system_instruction:
-            sys_msg = system_instruction if "json" in system_instruction.lower() else f"{system_instruction}\n\n{json_schema_instruction}"
+        base_sys = system_instruction or "You are Axora Intent Agent powered by NVIDIA NIM. Fulfill user intents by calling appropriate tools or providing final answers."
+        if "json" not in base_sys.lower():
+            base_sys = f"{base_sys}\n\n{json_schema_instruction}"
+
+        if tools_schema:
+            tools_json = json.dumps(tools_schema, indent=2, ensure_ascii=False)
+            sys_msg = f"{base_sys}\n\n=== Available Tools Schema ===\n{tools_json}"
         else:
-            sys_msg = f"You are the Axora Intent Agent powered by LLM.\n{json_schema_instruction}"
+            sys_msg = base_sys
 
         try:
             import httpx
@@ -236,6 +255,12 @@ class GroqLLMAdapter:
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
+                if resp.status_code == 400 and "json_validate_failed" in resp.text:
+                    logger.warning("[GROQ LLM API] json_validate_failed received. Retrying request without response_format...")
+                    body_no_rf = dict(body)
+                    body_no_rf.pop("response_format", None)
+                    resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body_no_rf)
+
                 if resp.is_error:
                     logger.error(
                         f"[GROQ LLM API ERROR] Status: {resp.status_code} | "
@@ -244,7 +269,8 @@ class GroqLLMAdapter:
                 resp.raise_for_status()
                 data = resp.json()
                 raw_json = data["choices"][0]["message"]["content"]
-                return AgentDecision.model_validate_json(raw_json)
+                clean_json = _clean_json_text(raw_json)
+                return AgentDecision.model_validate_json(clean_json)
 
         except Exception as exc:
             logger.warning(f"[GROQ LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")
@@ -355,7 +381,8 @@ class NvidiaLLMAdapter:
                 resp.raise_for_status()
                 data = resp.json()
                 raw_json = data["choices"][0]["message"]["content"]
-                return AgentDecision.model_validate_json(raw_json)
+                clean_json = _clean_json_text(raw_json)
+                return AgentDecision.model_validate_json(clean_json)
 
         except Exception as exc:
             logger.warning(f"[NVIDIA LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")

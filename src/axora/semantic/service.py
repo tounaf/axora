@@ -43,22 +43,42 @@ class SemanticModelService:
         return list(self._model.entities.keys())
 
     def get_entity_details(self, entity_name: str) -> EntityDefinition | None:
-        """Retrieves detailed definition for a specific entity name or synonym.
+        """Retrieves detailed definition for a specific entity name, synonym, table, or variation.
 
         Returns None if entity is not found.
         """
+        if not entity_name:
+            return None
+
         # Direct lookup by entity name
         if entity_name in self._model.entities:
             return self._model.entities[entity_name]
 
-        # Synonym lookup
-        entity_name_lower = entity_name.lower().strip()
+        # Normalized lookup
+        term = entity_name.lower().strip()
+
+        # Build term variations (singular/plural, English/French common suffixes)
+        variations = {term}
+        if term.endswith("s"):
+            variations.add(term[:-1])
+        else:
+            variations.add(f"{term}s")
+
+        if term.startswith("member"):
+            variations.update(["membre", "membres", "member", "members"])
+
         for name, entity in self._model.entities.items():
-            if name.lower() == entity_name_lower:
-                return entity
+            candidate_terms = {name.lower(), entity.storage.table.lower()}
             for syn in entity.synonyms:
-                if syn.lower() == entity_name_lower:
-                    return entity
+                syn_lower = syn.lower().strip()
+                candidate_terms.add(syn_lower)
+                if syn_lower.endswith("s"):
+                    candidate_terms.add(syn_lower[:-1])
+                else:
+                    candidate_terms.add(f"{syn_lower}s")
+
+            if variations & candidate_terms:
+                return entity
 
         return None
 

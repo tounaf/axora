@@ -66,3 +66,11 @@ def test_semantic_service_business_rules():
     rule_ids = [r.id for r in rules]
     assert "BR-001" in rule_ids
     assert "BR-003" in rule_ids
+
+
+def test_semantic_service_entity_variations():
+    service = SemanticModelService.from_yaml(YAML_PATH)
+    assert service.get_entity_details("member") is not None
+    assert service.get_entity_details("members") is not None
+    assert service.get_entity_details("membres") is not None
+    assert service.get_entity_details("paroisses") is not None
