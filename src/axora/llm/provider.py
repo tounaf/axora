@@ -192,6 +192,41 @@ def _clean_json_text(text: str) -> str:
     return clean
 
 
+
+def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
+    """Flexible parser converting any JSON dictionary into a valid AgentDecision instance."""
+    clean_text = _clean_json_text(raw_text)
+    try:
+        data = json.loads(clean_text)
+    except Exception:
+        return AgentDecision(type="final_answer", content=clean_text)
+
+    if not isinstance(data, dict):
+        return AgentDecision(type="final_answer", content=str(clean_text))
+
+    # Standard AgentDecision structure
+    if "type" in data and data["type"] in ("call_tool", "ask_user", "final_answer"):
+        return AgentDecision.model_validate(data)
+
+    # Direct tool call structure (e.g. {"name": "query_data", "arguments": {...}})
+    tool_name = data.get("name") or data.get("tool") or data.get("tool_name")
+    if tool_name:
+        args = data.get("arguments") or data.get("args") or {}
+        if not isinstance(args, dict):
+            args = {}
+        return AgentDecision(
+            type="call_tool",
+            tool_call=ToolCall(name=str(tool_name), arguments=args),
+        )
+
+    # Content or answer response
+    content_text = data.get("content") or data.get("answer") or data.get("message") or data.get("response")
+    if content_text:
+        return AgentDecision(type="final_answer", content=str(content_text))
+
+    return AgentDecision(type="final_answer", content=clean_text)
+
+
 class GroqLLMAdapter:
     """Production Groq LLM Adapter utilizing Groq's ultra-fast free Cloud API endpoints (OpenAI compatible)."""
 
@@ -270,7 +305,7 @@ class GroqLLMAdapter:
                 data = resp.json()
                 raw_json = data["choices"][0]["message"]["content"]
                 clean_json = _clean_json_text(raw_json)
-                return AgentDecision.model_validate_json(clean_json)
+                return parse_agent_decision_from_json(raw_json)
 
         except Exception as exc:
             logger.warning(f"[GROQ LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")
@@ -382,7 +417,7 @@ class NvidiaLLMAdapter:
                 data = resp.json()
                 raw_json = data["choices"][0]["message"]["content"]
                 clean_json = _clean_json_text(raw_json)
-                return AgentDecision.model_validate_json(clean_json)
+                return parse_agent_decision_from_json(raw_json)
 
         except Exception as exc:
             logger.warning(f"[NVIDIA LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")

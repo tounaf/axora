@@ -115,3 +115,20 @@ async def test_groq_llm_adapter_error_logging(caplog):
         assert decision is not None
         assert "[GROQ LLM API ERROR] Status: 400" in caplog.text
         assert "Model invalid-model not found" in caplog.text
+
+
+def test_parse_agent_decision_from_json_direct_tool_call():
+    from axora.llm.provider import parse_agent_decision_from_json
+    raw_json = "```json\n{\"name\": \"discover_model\", \"arguments\": {\"concept\": \"Association\"}}\n```"
+    decision = parse_agent_decision_from_json(raw_json)
+    assert decision.type == "call_tool"
+    assert decision.tool_call.name == "discover_model"
+    assert decision.tool_call.arguments == {"concept": "Association"}
+
+
+def test_parse_agent_decision_from_json_standard():
+    from axora.llm.provider import parse_agent_decision_from_json
+    raw_json = "{\"type\": \"final_answer\", \"content\": \"Voici la réponse\"}"
+    decision = parse_agent_decision_from_json(raw_json)
+    assert decision.type == "final_answer"
+    assert decision.content == "Voici la réponse"
