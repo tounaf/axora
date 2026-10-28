@@ -18,9 +18,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@db:5432/axora"
 
     # LLM Settings
-    LLM_PROVIDER: str = "mock"  # Options: openai, nvidia, anthropic, ollama, mock
+    LLM_PROVIDER: str = "mock"  # Options: groq, nvidia, openai, anthropic, ollama, mock
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4o-mini"
+
+    # Groq Specific Settings (Free Ultra-Fast API Tokens)
+    GROQ_API_KEY: str = ""
+    GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # NVIDIA NIM Specific Settings (Free API Tokens)
     NVIDIA_API_KEY: str = ""

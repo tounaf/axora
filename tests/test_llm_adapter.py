@@ -1,6 +1,6 @@
 import pytest
 from axora.agent.decisions import AgentDecision, ToolCall
-from axora.llm.provider import MockLLMAdapter, NvidiaLLMAdapter, OpenAILLMAdapter, get_llm_adapter
+from axora.llm.provider import GroqLLMAdapter, MockLLMAdapter, NvidiaLLMAdapter, OpenAILLMAdapter, get_llm_adapter
 
 
 @pytest.mark.asyncio
@@ -65,6 +65,17 @@ async def test_nvidia_llm_adapter_fallback():
     assert decision.type in ("call_tool", "final_answer")
 
 
+@pytest.mark.asyncio
+async def test_groq_llm_adapter_fallback():
+    adapter = GroqLLMAdapter(api_key="gsk_your_free_groq_api_key_here", model="llama-3.3-70b-versatile")
+    assert adapter.provider_name == "groq"
+    assert adapter.model_name == "llama-3.3-70b-versatile"
+
+    decision = await adapter.decide("Qui est Rakoto Jean ?")
+    assert isinstance(decision, AgentDecision)
+    assert decision.type in ("call_tool", "final_answer")
+
+
 def test_get_llm_adapter_factory():
     mock_adapter = get_llm_adapter("mock")
     assert mock_adapter.provider_name == "mock"
@@ -74,3 +85,6 @@ def test_get_llm_adapter_factory():
 
     nvidia_adapter = get_llm_adapter("nvidia")
     assert nvidia_adapter.provider_name == "nvidia"
+
+    groq_adapter = get_llm_adapter("groq")
+    assert groq_adapter.provider_name == "groq"

@@ -63,7 +63,7 @@ class MockLLMAdapter:
     def _interpret_intent_to_tool_call(self, intent: str, full_prompt: str) -> AgentDecision:
         intent_lower = intent.lower()
 
-        # Pattern 1: Universal Listing Intent (e.g., "lister tous les membres", "liste des membres", "afficher les paroisses")
+        # Pattern 1: Universal Listing Intent
         if any(phrase in intent_lower for phrase in ("lister tous", "liste des", "tous les", "toutes les", "lister les")):
             target_concept = "Membre"
             if "paroisse" in intent_lower:
@@ -84,7 +84,7 @@ class MockLLMAdapter:
                 ),
             )
 
-        # Pattern 2: Attribute/Property Question on previously queried person (e.g. "Rasoa est elle mariée ou célibataire ?")
+        # Pattern 2: Attribute/Property Question on previously queried person
         if any(keyword in intent_lower for keyword in ("est elle", "est il", "est-elle", "est-il", "mariée", "célibataire")):
             match_name = re.search(r"([A-Za-zÀ-ÿ\-]+)", intent_lower)
             if match_name:
@@ -100,7 +100,7 @@ class MockLLMAdapter:
                     ),
                 )
 
-        # Pattern 3: Specific Person search intent (e.g. "Qui est <Nom> <Prenom>", "Chercher <Nom>")
+        # Pattern 3: Specific Person search intent
         match = re.search(r"(?:qui est|détails? de|cherche|trouve|info sur)\s+([A-Za-zÀ-ÿ\-]+)(?:\s+([A-Za-zÀ-ÿ\-]+))?", intent_lower)
         if match:
             first_term = match.group(1).capitalize()
@@ -176,6 +176,71 @@ class MockLLMAdapter:
             type="final_answer",
             content="J'ai bien récupéré et analysé les données de la base. Que souhaitez-vous savoir d'autre ?",
         )
+
+
+class GroqLLMAdapter:
+    """Production Groq LLM Adapter utilizing Groq's ultra-fast free Cloud API endpoints (OpenAI compatible)."""
+
+    def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None) -> None:
+        self._api_key = api_key or settings.GROQ_API_KEY or settings.LLM_API_KEY
+        self._model = model or settings.GROQ_MODEL
+        self._base_url = base_url or settings.GROQ_BASE_URL
+
+    @property
+    def provider_name(self) -> str:
+        return "groq"
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    async def decide(
+        self,
+        prompt: str,
+        tools_schema: list[dict[str, Any]] | None = None,
+        system_instruction: str | None = None,
+    ) -> AgentDecision:
+        if not self._api_key or self._api_key.startswith("gsk_your") or self._api_key.startswith("sk-proj") or self._api_key.startswith("nvapi"):
+            logger.info("[GROQ LLM] Placeholder/No API Key detected -> Using Dynamic Mock LLM Adapter.")
+            fallback = MockLLMAdapter()
+            return await fallback.decide(prompt, tools_schema, system_instruction)
+
+        sys_msg = system_instruction or (
+            "You are the Axora Intent Agent powered by Groq LPU. Respond ONLY with a valid JSON matching the AgentDecision schema:\n"
+            "{\n"
+            '  "type": "call_tool" | "ask_user" | "final_answer",\n'
+            '  "tool_call": {"name": string, "arguments": dict} | null,\n'
+            '  "content": string | null\n'
+            "}"
+        )
+
+        try:
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            }
+            body = {
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+                "response_format": {"type": "json_object"},
+            }
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
+                resp.raise_for_status()
+                data = resp.json()
+                raw_json = data["choices"][0]["message"]["content"]
+                return AgentDecision.model_validate_json(raw_json)
+
+        except Exception as exc:
+            logger.warning(f"[GROQ LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")
+            fallback = MockLLMAdapter()
+            return await fallback.decide(prompt, tools_schema, system_instruction)
 
 
 class OpenAILLMAdapter:
@@ -283,7 +348,9 @@ class NvidiaLLMAdapter:
 def get_llm_adapter(provider: str | None = None) -> LLMAdapter:
     """Factory function returning the configured LLM adapter."""
     prov = (provider or settings.LLM_PROVIDER).lower()
-    if prov == "nvidia":
+    if prov == "groq":
+        return GroqLLMAdapter()
+    elif prov == "nvidia":
         return NvidiaLLMAdapter()
     elif prov == "openai":
         return OpenAILLMAdapter()
