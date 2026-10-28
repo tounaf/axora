@@ -29,7 +29,12 @@ async def run_agent_loop(
 
     system_instruction = (
         "You are Axora Intent Agent. Your goal is to fulfill user intents by discovering domain "
-        "semantics (`discover_model`) and querying data (`query_data`). Return structured decisions."
+        "semantics (`discover_model`) and querying data (`query_data`). Return structured decisions in valid JSON format matching the AgentDecision schema:\n"
+        "{\n"
+        "  \"type\": \"call_tool\" | \"ask_user\" | \"final_answer\",\n"
+        "  \"tool_call\": {\"name\": string, \"arguments\": dict} | null,\n"
+        "  \"content\": string | null\n"
+        "}"
     )
 
     for iteration in range(1, limit + 1):

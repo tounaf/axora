@@ -205,14 +205,18 @@ class GroqLLMAdapter:
             fallback = MockLLMAdapter()
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
-        sys_msg = system_instruction or (
-            "You are the Axora Intent Agent powered by Groq LPU. Respond ONLY with a valid JSON matching the AgentDecision schema:\n"
+        json_schema_instruction = (
+            "Respond ONLY with a valid JSON object matching the AgentDecision schema:\n"
             "{\n"
             '  "type": "call_tool" | "ask_user" | "final_answer",\n'
             '  "tool_call": {"name": string, "arguments": dict} | null,\n'
             '  "content": string | null\n'
             "}"
         )
+        if system_instruction:
+            sys_msg = system_instruction if "json" in system_instruction.lower() else f"{system_instruction}\n\n{json_schema_instruction}"
+        else:
+            sys_msg = f"You are the Axora Intent Agent powered by LLM.\n{json_schema_instruction}"
 
         try:
             import httpx
@@ -311,14 +315,18 @@ class NvidiaLLMAdapter:
             fallback = MockLLMAdapter()
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
-        sys_msg = system_instruction or (
-            "You are the Axora Intent Agent powered by NVIDIA NIM. Respond ONLY with a valid JSON matching the AgentDecision schema:\n"
+        json_schema_instruction = (
+            "Respond ONLY with a valid JSON object matching the AgentDecision schema:\n"
             "{\n"
             '  "type": "call_tool" | "ask_user" | "final_answer",\n'
             '  "tool_call": {"name": string, "arguments": dict} | null,\n'
             '  "content": string | null\n'
             "}"
         )
+        if system_instruction:
+            sys_msg = system_instruction if "json" in system_instruction.lower() else f"{system_instruction}\n\n{json_schema_instruction}"
+        else:
+            sys_msg = f"You are the Axora Intent Agent powered by LLM.\n{json_schema_instruction}"
 
         try:
             import httpx
