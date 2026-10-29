@@ -193,8 +193,11 @@ def _clean_json_text(text: str) -> str:
 
 
 def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
-    """Flexible parser converting any JSON dictionary into a valid AgentDecision instance."""
+    """Flexible parser converting any LLM output into a valid AgentDecision instance."""
     clean_text = _clean_json_text(raw_text)
+    if not clean_text:
+        return AgentDecision(type="final_answer", content="Traitement effectué.")
+
     try:
         data = json.loads(clean_text)
     except Exception:
@@ -203,24 +206,54 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
     if not isinstance(data, dict):
         return AgentDecision(type="final_answer", content=str(clean_text))
 
-    if "type" in data and data["type"] in ("call_tool", "ask_user", "final_answer"):
-        return AgentDecision.model_validate(data)
-
+    # Unwrap tool wrapper like {"name": "json", "arguments": {"type": "call_tool", ...}}
     tool_name = data.get("name") or data.get("tool") or data.get("tool_name")
-    if tool_name:
-        args = data.get("arguments") or data.get("args") or {}
-        if not isinstance(args, dict):
-            args = {}
+    args = data.get("arguments") or data.get("args") or {}
+    if tool_name in ("json", "tool.exec", "tool_call", "agent_decision") and isinstance(args, dict):
+        if "type" in args or "name" in args or "tool_call" in args:
+            return parse_agent_decision_from_json(json.dumps(args))
+
+    # Standard AgentDecision
+    if "type" in data and data["type"] in ("call_tool", "ask_user", "final_answer"):
+        dtype = data["type"]
+        content_val = data.get("content")
+        tool_call = data.get("tool_call")
+
+        if dtype == "call_tool":
+            if isinstance(tool_call, dict) and "name" in tool_call:
+                return AgentDecision(
+                    type="call_tool",
+                    tool_call=ToolCall(
+                        name=str(tool_call["name"]),
+                        arguments=tool_call.get("arguments") or {},
+                    ),
+                )
+            elif tool_name and tool_name not in ("json", "tool.exec", "tool_call"):
+                return AgentDecision(
+                    type="call_tool",
+                    tool_call=ToolCall(name=str(tool_name), arguments=args if isinstance(args, dict) else {}),
+                )
+
+        if dtype in ("ask_user", "final_answer"):
+            if not content_val or not str(content_val).strip():
+                content_val = "Traitement effectué."
+            return AgentDecision(type=dtype, content=str(content_val))
+
+    # Direct tool call dict like {"name": "query_data", "arguments": {...}}
+    if tool_name and tool_name not in ("json", "tool.exec", "tool_call"):
         return AgentDecision(
             type="call_tool",
-            tool_call=ToolCall(name=str(tool_name), arguments=args),
+            tool_call=ToolCall(
+                name=str(tool_name),
+                arguments=args if isinstance(args, dict) else {},
+            ),
         )
 
-    content_text = data.get("content") or data.get("answer") or data.get("message") or data.get("response")
-    if content_text:
-        return AgentDecision(type="final_answer", content=str(content_text))
-
-    return AgentDecision(type="final_answer", content=clean_text)
+    # Content or text fallback
+    content_text = data.get("content") or data.get("answer") or data.get("message") or data.get("response") or clean_text
+    if not content_text or not str(content_text).strip():
+        content_text = "Traitement effectué."
+    return AgentDecision(type="final_answer", content=str(content_text))
 
 
 class GroqLLMAdapter:
@@ -293,6 +326,15 @@ class GroqLLMAdapter:
                         f"[GROQ LLM API ERROR] Status: {resp.status_code} | "
                         f"Response: {resp.text}"
                     )
+                    try:
+                        err_data = resp.json()
+                        failed_gen = err_data.get("error", {}).get("failed_generation")
+                        if failed_gen:
+                            logger.info(f"[GROQ LLM API] Attempting recovery from failed_generation: {failed_gen}")
+                            return parse_agent_decision_from_json(failed_gen)
+                    except Exception as recovery_exc:
+                        logger.warning(f"[GROQ LLM API] Recovery from failed_generation failed: {recovery_exc}")
+
                 resp.raise_for_status()
                 data = resp.json()
                 msg = data["choices"][0]["message"]
@@ -431,6 +473,15 @@ class NvidiaLLMAdapter:
                         f"[NVIDIA LLM API ERROR] Status: {resp.status_code} | "
                         f"Response: {resp.text}"
                     )
+                    try:
+                        err_data = resp.json()
+                        failed_gen = err_data.get("error", {}).get("failed_generation")
+                        if failed_gen:
+                            logger.info(f"[NVIDIA LLM API] Attempting recovery from failed_generation: {failed_gen}")
+                            return parse_agent_decision_from_json(failed_gen)
+                    except Exception as recovery_exc:
+                        logger.warning(f"[NVIDIA LLM API] Recovery from failed_generation failed: {recovery_exc}")
+
                 resp.raise_for_status()
                 data = resp.json()
                 msg = data["choices"][0]["message"]

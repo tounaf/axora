@@ -177,3 +177,45 @@ async def test_groq_llm_adapter_native_tool_call():
         assert decision.type == "call_tool"
         assert decision.tool_call.name == "query_data"
         assert decision.tool_call.arguments == {"entity": "Association"}
+
+
+def test_parse_agent_decision_from_json_nested_json_tool():
+    from axora.llm.provider import parse_agent_decision_from_json
+    raw_json = "{\"name\": \"json\", \"arguments\": {\"type\": \"call_tool\", \"tool_call\": {\"name\": \"query_data\", \"arguments\": {\"entity\": \"Membre\"}}, \"content\": null}}"
+    decision = parse_agent_decision_from_json(raw_json)
+    assert decision.type == "call_tool"
+    assert decision.tool_call.name == "query_data"
+    assert decision.tool_call.arguments == {"entity": "Membre"}
+
+
+def test_parse_agent_decision_from_json_empty_content_fallback():
+    from axora.llm.provider import parse_agent_decision_from_json
+    raw_json = "{\"type\": \"final_answer\", \"content\": \"\"}"
+    decision = parse_agent_decision_from_json(raw_json)
+    assert decision.type == "final_answer"
+    assert decision.content == "Traitement effectué."
+
+
+@pytest.mark.asyncio
+async def test_groq_llm_adapter_failed_generation_recovery():
+    import httpx
+    from unittest.mock import MagicMock, patch
+
+    adapter = GroqLLMAdapter(api_key="gsk_valid_key_test", model="llama-3.3-70b-versatile")
+
+    mock_response = MagicMock()
+    mock_response.is_error = True
+    mock_response.status_code = 400
+    mock_response.json.return_value = {
+        "error": {
+            "message": "Tool call validation failed",
+            "failed_generation": "{\"name\": \"query_data\", \"arguments\": {\"entity\": \"Membre\"}}"
+        }
+    }
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError("400 Bad Request", request=MagicMock(), response=mock_response)
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        decision = await adapter.decide("Lister membres")
+        assert decision.type == "call_tool"
+        assert decision.tool_call.name == "query_data"
+        assert decision.tool_call.arguments == {"entity": "Membre"}
