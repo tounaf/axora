@@ -219,3 +219,11 @@ async def test_groq_llm_adapter_failed_generation_recovery():
         assert decision.type == "call_tool"
         assert decision.tool_call.name == "query_data"
         assert decision.tool_call.arguments == {"entity": "Membre"}
+
+
+def test_parse_agent_decision_from_json_answer_wrapper():
+    from axora.llm.provider import parse_agent_decision_from_json
+    raw_json = "{\"name\": \"answer\", \"arguments\": {\"type\": \"final_answer\", \"tool_call\": null, \"content\": \"Voici les associations\"}}"
+    decision = parse_agent_decision_from_json(raw_json)
+    assert decision.type == "final_answer"
+    assert decision.content == "Voici les associations"

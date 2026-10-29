@@ -206,12 +206,12 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
     if not isinstance(data, dict):
         return AgentDecision(type="final_answer", content=str(clean_text))
 
-    # Unwrap tool wrapper like {"name": "json", "arguments": {"type": "call_tool", ...}}
     tool_name = data.get("name") or data.get("tool") or data.get("tool_name")
     args = data.get("arguments") or data.get("args") or {}
-    if tool_name in ("json", "tool.exec", "tool_call", "agent_decision") and isinstance(args, dict):
-        if "type" in args or "name" in args or "tool_call" in args:
-            return parse_agent_decision_from_json(json.dumps(args))
+
+    # Unwrap tool wrappers like {"name": "answer", "arguments": {"type": "final_answer", ...}} or {"name": "json", "arguments": ...}
+    if isinstance(args, dict) and ("type" in args or "content" in args or "tool_call" in args):
+        return parse_agent_decision_from_json(json.dumps(args))
 
     # Standard AgentDecision
     if "type" in data and data["type"] in ("call_tool", "ask_user", "final_answer"):
@@ -228,7 +228,7 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
                         arguments=tool_call.get("arguments") or {},
                     ),
                 )
-            elif tool_name and tool_name not in ("json", "tool.exec", "tool_call"):
+            elif tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer"):
                 return AgentDecision(
                     type="call_tool",
                     tool_call=ToolCall(name=str(tool_name), arguments=args if isinstance(args, dict) else {}),
@@ -240,7 +240,7 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
             return AgentDecision(type=dtype, content=str(content_val))
 
     # Direct tool call dict like {"name": "query_data", "arguments": {...}}
-    if tool_name and tool_name not in ("json", "tool.exec", "tool_call"):
+    if tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer"):
         return AgentDecision(
             type="call_tool",
             tool_call=ToolCall(
