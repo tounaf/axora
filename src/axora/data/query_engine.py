@@ -136,7 +136,11 @@ class QueryEngine:
         raw_row_mapping: dict[str, Any],
     ) -> None:
         """Dynamically resolves and attaches relationship fields to an entity record dictionary."""
-        record_id = raw_row_mapping.get(entity_def.storage.id)
+        raw_record_id = raw_row_mapping.get(entity_def.storage.id)
+        if raw_record_id is None:
+            return
+
+        str_record_id = str(raw_record_id)
 
         for rel_name, rel_def in entity_def.relationships.items():
             target_entity_def = self._semantic_service.get_entity_details(rel_def.target)
@@ -145,18 +149,29 @@ class QueryEngine:
 
             target_table_name = target_entity_def.storage.table
             target_table = get_dynamic_table(target_table_name, self._semantic_service)
+            target_entity_name = rel_def.target.lower()
 
-            # 1. Many-To-One Relationship (e.g. Membre -> Paroisse via paroisse_id)
-            if rel_def.cardinality == "many-to-one":
-                fk_col = f"{target_table_name}_id"
-                fk_val = raw_row_mapping.get(fk_col)
-                if fk_val is not None:
+            # 1. Many-To-One Relationship (e.g. Membre -> Paroisse via paroisse_id, Membre -> Zone via zone_geographique_id)
+            if rel_def.cardinality in ("many-to-one", "one-to-one"):
+                fk_candidates = [
+                    f"{target_table_name}_id",
+                    f"{rel_name}_id",
+                    f"{target_entity_name}_id",
+                ]
+                fk_col = None
+                for candidate in fk_candidates:
+                    if candidate in raw_row_mapping and raw_row_mapping[candidate] is not None:
+                        fk_col = candidate
+                        break
+
+                if fk_col and raw_row_mapping[fk_col] is not None:
+                    fk_val = str(raw_row_mapping[fk_col])
                     stmt = select(target_table).where(target_table.c[target_entity_def.storage.id] == fk_val)
                     res = await session.execute(stmt)
                     rel_row = res.fetchone()
                     if rel_row:
                         m = rel_row._mapping
-                        display_val = m.get("nom") or m.get("code") or m.get("name") or str(fk_val)
+                        display_val = m.get("nom") or m.get("code") or m.get("name") or fk_val
                         record[rel_name] = display_val
                         record[f"{rel_name}.nom"] = display_val
                     else:
@@ -171,14 +186,17 @@ class QueryEngine:
                 through_table_name = rel_def.through
                 through_table = get_dynamic_table(through_table_name, self._semantic_service)
 
-                primary_fk = f"{entity_def.storage.table}_id"
-                target_fk = f"{target_table_name}_id"
+                primary_fk_candidates = [f"{entity_def.storage.table}_id"]
+                target_fk_candidates = [f"{target_table_name}_id", f"{target_entity_name}_id"]
 
-                if record_id is not None and primary_fk in through_table.c and target_fk in through_table.c:
+                primary_fk = next((c for c in primary_fk_candidates if c in through_table.c), None)
+                target_fk = next((c for c in target_fk_candidates if c in through_table.c), None)
+
+                if primary_fk and target_fk:
                     stmt = (
                         select(target_table)
                         .join(through_table, target_table.c[target_entity_def.storage.id] == through_table.c[target_fk])
-                        .where(through_table.c[primary_fk] == record_id)
+                        .where(through_table.c[primary_fk] == str_record_id)
                     )
                     res = await session.execute(stmt)
                     rel_rows = res.fetchall()
@@ -193,9 +211,11 @@ class QueryEngine:
 
             # 3. One-To-Many Relationship (e.g. Paroisse -> Membres or Association -> Membres)
             elif rel_def.cardinality == "one-to-many":
-                primary_fk = f"{entity_def.storage.table}_id"
-                if record_id is not None and primary_fk in target_table.c:
-                    stmt = select(target_table).where(target_table.c[primary_fk] == record_id)
+                primary_fk_candidates = [f"{entity_def.storage.table}_id"]
+                primary_fk = next((c for c in primary_fk_candidates if c in target_table.c), None)
+
+                if primary_fk:
+                    stmt = select(target_table).where(target_table.c[primary_fk] == str_record_id)
                     res = await session.execute(stmt)
                     rel_rows = res.fetchall()
                     names = []
