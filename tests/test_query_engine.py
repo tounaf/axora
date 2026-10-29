@@ -100,3 +100,20 @@ async def test_query_data_tool_execution(in_memory_db, semantic_service):
     assert result.status == "success"
     assert result.data["entity"] == "Membre"
     assert result.data["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_query_engine_relational_enrichment(in_memory_db, semantic_service):
+    engine = QueryEngine(semantic_service)
+    async with in_memory_db() as session:
+        results = await engine.execute_query(
+            session=session,
+            entity_name="Membre",
+        )
+        assert len(results) == 2
+        for rec in results:
+            assert "paroisse" in rec
+            assert rec["paroisse"] == "Andranovelona"
+            assert "zone" in rec
+            assert rec["zone"] == "Andoharanofotsy"
+            assert "associations" in rec
