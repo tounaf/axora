@@ -201,6 +201,17 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
     try:
         data = json.loads(clean_text)
     except Exception:
+        if clean_text.startswith('{"name":') and '"arguments":' in clean_text:
+            arg_part = clean_text.split('"arguments":', 1)[-1].strip()
+            if arg_part.endswith('"}') or arg_part.endswith('"}'):
+                arg_part = arg_part[:-2].strip()
+            elif arg_part.endswith('}'):
+                arg_part = arg_part[:-1].strip()
+            if arg_part.startswith('"') and arg_part.endswith('"'):
+                arg_part = arg_part[1:-1].strip()
+            if arg_part:
+                return AgentDecision(type="final_answer", content=arg_part)
+
         return AgentDecision(type="final_answer", content=clean_text)
 
     if not isinstance(data, dict):
@@ -209,7 +220,7 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
     tool_name = data.get("name") or data.get("tool") or data.get("tool_name")
     args = data.get("arguments") or data.get("args") or {}
 
-    # Unwrap tool wrappers like {"name": "answer", "arguments": {"type": "final_answer", ...}} or {"name": "json", "arguments": ...}
+    # Unwrap tool wrappers like {"name": "answer", "arguments": {"type": "final_answer", ...}} or {"name": "agent_decision", ...}
     if isinstance(args, dict) and ("type" in args or "content" in args or "tool_call" in args):
         return parse_agent_decision_from_json(json.dumps(args))
 
@@ -228,7 +239,7 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
                         arguments=tool_call.get("arguments") or {},
                     ),
                 )
-            elif tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer"):
+            elif tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer", "agent_decision"):
                 return AgentDecision(
                     type="call_tool",
                     tool_call=ToolCall(name=str(tool_name), arguments=args if isinstance(args, dict) else {}),
@@ -240,7 +251,7 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
             return AgentDecision(type=dtype, content=str(content_val))
 
     # Direct tool call dict like {"name": "query_data", "arguments": {...}}
-    if tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer"):
+    if tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer", "agent_decision"):
         return AgentDecision(
             type="call_tool",
             tool_call=ToolCall(
@@ -322,18 +333,19 @@ class GroqLLMAdapter:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
                 if resp.is_error:
-                    logger.error(
-                        f"[GROQ LLM API ERROR] Status: {resp.status_code} | "
-                        f"Response: {resp.text}"
-                    )
                     try:
                         err_data = resp.json()
                         failed_gen = err_data.get("error", {}).get("failed_generation")
                         if failed_gen:
-                            logger.info(f"[GROQ LLM API] Attempting recovery from failed_generation: {failed_gen}")
+                            logger.info("[GROQ LLM API] Recovering decision from failed_generation payload.")
                             return parse_agent_decision_from_json(failed_gen)
                     except Exception as recovery_exc:
-                        logger.warning(f"[GROQ LLM API] Recovery from failed_generation failed: {recovery_exc}")
+                        logger.debug(f"[GROQ LLM API] Recovery attempt failed: {recovery_exc}")
+
+                    logger.error(
+                        f"[GROQ LLM API ERROR] Status: {resp.status_code} | "
+                        f"Response: {resp.text}"
+                    )
 
                 resp.raise_for_status()
                 data = resp.json()
@@ -469,18 +481,19 @@ class NvidiaLLMAdapter:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
                 if resp.is_error:
-                    logger.error(
-                        f"[NVIDIA LLM API ERROR] Status: {resp.status_code} | "
-                        f"Response: {resp.text}"
-                    )
                     try:
                         err_data = resp.json()
                         failed_gen = err_data.get("error", {}).get("failed_generation")
                         if failed_gen:
-                            logger.info(f"[NVIDIA LLM API] Attempting recovery from failed_generation: {failed_gen}")
+                            logger.info("[NVIDIA LLM API] Recovering decision from failed_generation payload.")
                             return parse_agent_decision_from_json(failed_gen)
                     except Exception as recovery_exc:
-                        logger.warning(f"[NVIDIA LLM API] Recovery from failed_generation failed: {recovery_exc}")
+                        logger.debug(f"[NVIDIA LLM API] Recovery attempt failed: {recovery_exc}")
+
+                    logger.error(
+                        f"[NVIDIA LLM API ERROR] Status: {resp.status_code} | "
+                        f"Response: {resp.text}"
+                    )
 
                 resp.raise_for_status()
                 data = resp.json()

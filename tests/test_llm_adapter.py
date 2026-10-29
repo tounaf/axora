@@ -108,6 +108,7 @@ async def test_groq_llm_adapter_error_logging(caplog):
     mock_response.is_error = True
     mock_response.status_code = 400
     mock_response.text = '{"error": {"message": "Model invalid-model not found"}}'
+    mock_response.json.return_value = {"error": {"message": "Model invalid-model not found"}}
     mock_response.raise_for_status.side_effect = httpx.HTTPStatusError("400 Bad Request", request=MagicMock(), response=mock_response)
 
     with patch("httpx.AsyncClient.post", return_value=mock_response):
@@ -227,3 +228,11 @@ def test_parse_agent_decision_from_json_answer_wrapper():
     decision = parse_agent_decision_from_json(raw_json)
     assert decision.type == "final_answer"
     assert decision.content == "Voici les associations"
+
+
+def test_parse_agent_decision_from_json_malformed_failed_gen():
+    from axora.llm.provider import parse_agent_decision_from_json
+    raw_str = "{\"name\": \"answer\", \"arguments\": Voici la liste de tous les membres :\n| Nom | Prénom |}"
+    decision = parse_agent_decision_from_json(raw_str)
+    assert decision.type == "final_answer"
+    assert "Voici la liste de tous les membres" in decision.content
