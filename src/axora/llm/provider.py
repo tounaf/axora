@@ -192,11 +192,45 @@ def _clean_json_text(text: str) -> str:
     return clean
 
 
-def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
+def format_observation_records(prompt: str) -> str | None:
+    """Dynamically parses observation records from prompt context if present."""
+    if not prompt or "=== Tool Execution Observations ===" not in prompt:
+        return None
+
+    try:
+        obs_part = prompt.split("=== Tool Execution Observations ===")[-1]
+        data_lines = [line for line in obs_part.splitlines() if "Data/Payload:" in line or "'records':" in line]
+        if data_lines:
+            raw_data_str = data_lines[0].split("Data/Payload:")[-1].strip()
+            import ast
+            parsed_data = ast.literal_eval(raw_data_str) if raw_data_str.startswith("{") else {}
+            if isinstance(parsed_data, dict):
+                records = parsed_data.get("records", [])
+                entity = parsed_data.get("entity", "enregistrement")
+                if not records:
+                    return "Aucun enregistrement correspondant à votre recherche n'a été trouvé dans la base de données."
+
+                lines = [f"Voici le(s) {len(records)} {entity}(s) trouvé(s) :"]
+                for idx, rec in enumerate(records, 1):
+                    details = ", ".join(
+                        f"{k}: {v}" for k, v in rec.items()
+                        if v is not None and k not in ("id", "paroisse_id", "zone_geographique_id")
+                    )
+                    lines.append(f"{idx}. {details}")
+                return "\n".join(lines)
+    except Exception as exc:
+        logger.error(f"[OBSERVATION PARSING ERROR] {exc}")
+
+    return None
+
+
+def parse_agent_decision_from_json(raw_text: str, prompt: str | None = None) -> AgentDecision:
     """Flexible parser converting any LLM output into a valid AgentDecision instance."""
     clean_text = _clean_json_text(raw_text)
+    obs_text = format_observation_records(prompt) if prompt else None
+
     if not clean_text:
-        return AgentDecision(type="final_answer", content="Traitement effectué.")
+        return AgentDecision(type="final_answer", content=obs_text or "Traitement effectué.")
 
     try:
         data = json.loads(clean_text)
@@ -212,17 +246,17 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
             if arg_part:
                 return AgentDecision(type="final_answer", content=arg_part)
 
-        return AgentDecision(type="final_answer", content=clean_text)
+        return AgentDecision(type="final_answer", content=obs_text or clean_text)
 
     if not isinstance(data, dict):
-        return AgentDecision(type="final_answer", content=str(clean_text))
+        return AgentDecision(type="final_answer", content=obs_text or str(clean_text))
 
     tool_name = data.get("name") or data.get("tool") or data.get("tool_name")
     args = data.get("arguments") or data.get("args") or {}
 
-    # Unwrap tool wrappers like {"name": "answer", "arguments": {"type": "final_answer", ...}} or {"name": "agent_decision", ...}
+    # Unwrap tool wrappers like {"name": "answer", "arguments": {"type": "final_answer", ...}}
     if isinstance(args, dict) and ("type" in args or "content" in args or "tool_call" in args):
-        return parse_agent_decision_from_json(json.dumps(args))
+        return parse_agent_decision_from_json(json.dumps(args), prompt=prompt)
 
     # Standard AgentDecision
     if "type" in data and data["type"] in ("call_tool", "ask_user", "final_answer"):
@@ -246,8 +280,8 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
                 )
 
         if dtype in ("ask_user", "final_answer"):
-            if not content_val or not str(content_val).strip():
-                content_val = "Traitement effectué."
+            if not content_val or not str(content_val).strip() or str(content_val).strip() == "Traitement effectué.":
+                content_val = obs_text or "Traitement effectué."
             return AgentDecision(type=dtype, content=str(content_val))
 
     # Direct tool call dict like {"name": "query_data", "arguments": {...}}
@@ -262,8 +296,8 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
 
     # Content or text fallback
     content_text = data.get("content") or data.get("answer") or data.get("message") or data.get("response") or clean_text
-    if not content_text or not str(content_text).strip():
-        content_text = "Traitement effectué."
+    if not content_text or not str(content_text).strip() or str(content_text).strip() == "Traitement effectué.":
+        content_text = obs_text or "Traitement effectué."
     return AgentDecision(type="final_answer", content=str(content_text))
 
 
@@ -338,7 +372,7 @@ class GroqLLMAdapter:
                         failed_gen = err_data.get("error", {}).get("failed_generation")
                         if failed_gen:
                             logger.info("[GROQ LLM API] Recovering decision from failed_generation payload.")
-                            return parse_agent_decision_from_json(failed_gen)
+                            return parse_agent_decision_from_json(failed_gen, prompt=prompt)
                     except Exception as recovery_exc:
                         logger.debug(f"[GROQ LLM API] Recovery attempt failed: {recovery_exc}")
 
@@ -370,7 +404,7 @@ class GroqLLMAdapter:
                     )
 
                 raw_json = msg.get("content") or ""
-                return parse_agent_decision_from_json(raw_json)
+                return parse_agent_decision_from_json(raw_json, prompt=prompt)
 
         except Exception as exc:
             logger.warning(f"[GROQ LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")
@@ -486,7 +520,7 @@ class NvidiaLLMAdapter:
                         failed_gen = err_data.get("error", {}).get("failed_generation")
                         if failed_gen:
                             logger.info("[NVIDIA LLM API] Recovering decision from failed_generation payload.")
-                            return parse_agent_decision_from_json(failed_gen)
+                            return parse_agent_decision_from_json(failed_gen, prompt=prompt)
                     except Exception as recovery_exc:
                         logger.debug(f"[NVIDIA LLM API] Recovery attempt failed: {recovery_exc}")
 
@@ -518,7 +552,7 @@ class NvidiaLLMAdapter:
                     )
 
                 raw_json = msg.get("content") or ""
-                return parse_agent_decision_from_json(raw_json)
+                return parse_agent_decision_from_json(raw_json, prompt=prompt)
 
         except Exception as exc:
             logger.warning(f"[NVIDIA LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")
