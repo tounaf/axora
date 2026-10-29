@@ -192,7 +192,6 @@ def _clean_json_text(text: str) -> str:
     return clean
 
 
-
 def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
     """Flexible parser converting any JSON dictionary into a valid AgentDecision instance."""
     clean_text = _clean_json_text(raw_text)
@@ -204,11 +203,9 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
     if not isinstance(data, dict):
         return AgentDecision(type="final_answer", content=str(clean_text))
 
-    # Standard AgentDecision structure
     if "type" in data and data["type"] in ("call_tool", "ask_user", "final_answer"):
         return AgentDecision.model_validate(data)
 
-    # Direct tool call structure (e.g. {"name": "query_data", "arguments": {...}})
     tool_name = data.get("name") or data.get("tool") or data.get("tool_name")
     if tool_name:
         args = data.get("arguments") or data.get("args") or {}
@@ -219,7 +216,6 @@ def parse_agent_decision_from_json(raw_text: str) -> AgentDecision:
             tool_call=ToolCall(name=str(tool_name), arguments=args),
         )
 
-    # Content or answer response
     content_text = data.get("content") or data.get("answer") or data.get("message") or data.get("response")
     if content_text:
         return AgentDecision(type="final_answer", content=str(content_text))
@@ -255,20 +251,17 @@ class GroqLLMAdapter:
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
         json_schema_instruction = (
-            "Respond ONLY with a valid JSON object matching the AgentDecision schema:\n"
+            "Respond ONLY with a valid JSON object matching the AgentDecision schema. "
+            "Output pure JSON with the keys:\n"
             "{\n"
             '  "type": "call_tool" | "ask_user" | "final_answer",\n'
             '  "tool_call": {"name": string, "arguments": dict} | null,\n'
             '  "content": string | null\n'
             "}"
         )
-        base_sys = system_instruction or "You are Axora Intent Agent powered by NVIDIA NIM. Fulfill user intents by calling appropriate tools or providing final answers."
+        base_sys = system_instruction or "You are Axora Intent Agent. Fulfill user intents by calling appropriate tools or providing final answers."
         if "json" not in base_sys.lower():
-            base_sys = f"{base_sys}\n\n{json_schema_instruction}"
-
-        if tools_schema:
-            tools_json = json.dumps(tools_schema, indent=2, ensure_ascii=False)
-            sys_msg = f"{base_sys}\n\n=== Available Tools Schema ===\n{tools_json}"
+            sys_msg = f"{base_sys}\n\n{json_schema_instruction}"
         else:
             sys_msg = base_sys
 
@@ -278,24 +271,23 @@ class GroqLLMAdapter:
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
             }
-            body = {
+            body: dict[str, Any] = {
                 "model": self._model,
                 "messages": [
                     {"role": "system", "content": sys_msg},
                     {"role": "user", "content": prompt},
                 ],
                 "temperature": 0.0,
-                "response_format": {"type": "json_object"},
             }
+
+            if tools_schema:
+                body["tools"] = tools_schema
+                body["tool_choice"] = "auto"
+            else:
+                body["response_format"] = {"type": "json_object"}
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
-                if resp.status_code == 400 and "json_validate_failed" in resp.text:
-                    logger.warning("[GROQ LLM API] json_validate_failed received. Retrying request without response_format...")
-                    body_no_rf = dict(body)
-                    body_no_rf.pop("response_format", None)
-                    resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body_no_rf)
-
                 if resp.is_error:
                     logger.error(
                         f"[GROQ LLM API ERROR] Status: {resp.status_code} | "
@@ -303,8 +295,27 @@ class GroqLLMAdapter:
                     )
                 resp.raise_for_status()
                 data = resp.json()
-                raw_json = data["choices"][0]["message"]["content"]
-                clean_json = _clean_json_text(raw_json)
+                msg = data["choices"][0]["message"]
+
+                tool_calls = msg.get("tool_calls")
+                if tool_calls and isinstance(tool_calls, list) and len(tool_calls) > 0:
+                    first_fn = tool_calls[0].get("function", {})
+                    fn_name = first_fn.get("name")
+                    fn_args_raw = first_fn.get("arguments", {})
+                    if isinstance(fn_args_raw, str):
+                        try:
+                            fn_args = json.loads(fn_args_raw)
+                        except Exception:
+                            fn_args = {}
+                    else:
+                        fn_args = fn_args_raw or {}
+
+                    return AgentDecision(
+                        type="call_tool",
+                        tool_call=ToolCall(name=fn_name, arguments=fn_args),
+                    )
+
+                raw_json = msg.get("content") or ""
                 return parse_agent_decision_from_json(raw_json)
 
         except Exception as exc:
@@ -377,17 +388,19 @@ class NvidiaLLMAdapter:
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
         json_schema_instruction = (
-            "Respond ONLY with a valid JSON object matching the AgentDecision schema:\n"
+            "Respond ONLY with a valid JSON object matching the AgentDecision schema. "
+            "Output pure JSON with the keys:\n"
             "{\n"
             '  "type": "call_tool" | "ask_user" | "final_answer",\n'
             '  "tool_call": {"name": string, "arguments": dict} | null,\n'
             '  "content": string | null\n'
             "}"
         )
-        if system_instruction:
-            sys_msg = system_instruction if "json" in system_instruction.lower() else f"{system_instruction}\n\n{json_schema_instruction}"
+        base_sys = system_instruction or "You are Axora Intent Agent powered by NVIDIA NIM. Fulfill user intents by calling appropriate tools or providing final answers."
+        if "json" not in base_sys.lower():
+            sys_msg = f"{base_sys}\n\n{json_schema_instruction}"
         else:
-            sys_msg = f"You are the Axora Intent Agent powered by LLM.\n{json_schema_instruction}"
+            sys_msg = base_sys
 
         try:
             import httpx
@@ -396,15 +409,20 @@ class NvidiaLLMAdapter:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             }
-            body = {
+            body: dict[str, Any] = {
                 "model": self._model,
                 "messages": [
                     {"role": "system", "content": sys_msg},
                     {"role": "user", "content": prompt},
                 ],
                 "temperature": 0.0,
-                "response_format": {"type": "json_object"},
             }
+
+            if tools_schema:
+                body["tools"] = tools_schema
+                body["tool_choice"] = "auto"
+            else:
+                body["response_format"] = {"type": "json_object"}
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
@@ -415,8 +433,27 @@ class NvidiaLLMAdapter:
                     )
                 resp.raise_for_status()
                 data = resp.json()
-                raw_json = data["choices"][0]["message"]["content"]
-                clean_json = _clean_json_text(raw_json)
+                msg = data["choices"][0]["message"]
+
+                tool_calls = msg.get("tool_calls")
+                if tool_calls and isinstance(tool_calls, list) and len(tool_calls) > 0:
+                    first_fn = tool_calls[0].get("function", {})
+                    fn_name = first_fn.get("name")
+                    fn_args_raw = first_fn.get("arguments", {})
+                    if isinstance(fn_args_raw, str):
+                        try:
+                            fn_args = json.loads(fn_args_raw)
+                        except Exception:
+                            fn_args = {}
+                    else:
+                        fn_args = fn_args_raw or {}
+
+                    return AgentDecision(
+                        type="call_tool",
+                        tool_call=ToolCall(name=fn_name, arguments=fn_args),
+                    )
+
+                raw_json = msg.get("content") or ""
                 return parse_agent_decision_from_json(raw_json)
 
         except Exception as exc:

@@ -132,3 +132,48 @@ def test_parse_agent_decision_from_json_standard():
     decision = parse_agent_decision_from_json(raw_json)
     assert decision.type == "final_answer"
     assert decision.content == "Voici la réponse"
+
+
+@pytest.mark.asyncio
+async def test_groq_llm_adapter_native_tool_call():
+    import json
+    from unittest.mock import MagicMock, patch
+
+    adapter = GroqLLMAdapter(api_key="gsk_valid_key_test", model="llama-3.3-70b-versatile")
+
+    mock_response = MagicMock()
+    mock_response.is_error = False
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "query_data",
+                                "arguments": "{\"entity\": \"Association\"}"
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    tools_schema = [
+        {
+            "type": "function",
+            "function": {
+                "name": "query_data",
+                "description": "Query business data",
+                "parameters": {"type": "object", "properties": {"entity": {"type": "string"}}}
+            }
+        }
+    ]
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response) as mock_post:
+        decision = await adapter.decide("Lister association", tools_schema=tools_schema)
+        assert decision.type == "call_tool"
+        assert decision.tool_call.name == "query_data"
+        assert decision.tool_call.arguments == {"entity": "Association"}
