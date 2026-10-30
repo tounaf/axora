@@ -97,3 +97,22 @@ async def get_conversation_session(conversation_id: str) -> SessionSchema:
         created_at=session.created_at,
         updated_at=session.updated_at,
     )
+
+
+@router.get("/model/overview")
+async def get_model_overview():
+    """Retrieves overview of entities and synonyms defined in the semantic model."""
+    overview = semantic_service.get_entities_overview()
+    return {
+        "model_name": semantic_service.model_name,
+        "version": semantic_service.version,
+        "entities": [e.model_dump() for e in overview],
+    }
+
+
+@router.get("/tools")
+async def list_registered_tools():
+    """Lists registered tools and their parameters schemas."""
+    return {
+        "tools": tool_registry.list_schemas()
+    }

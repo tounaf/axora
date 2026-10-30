@@ -15,3 +15,9 @@ def test_root():
     response = client.get("/")
     assert response.status_code == 200
     assert response.json()["name"] == "Axora"
+
+
+def test_ui_dashboard_endpoint():
+    response = client.get("/ui")
+    assert response.status_code == 200
+    assert "Axora" in response.text
