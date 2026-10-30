@@ -104,3 +104,40 @@ axora/
 ---
 
 **Axora — From intent to action.**
+
+
+---
+
+---
+
+## 🌐 Interface Web Dashboard (FEAT-08)
+
+Axora propose un **Dashboard Web 3 Colonnes** interactif (`/ui`) intégrant :
+1. **Sidebar Navigation** (`Assistant`, `Modèle Métier`, `Données`, `Outils`).
+2. **Zone de Chat Centrale** avec accordéons d'exécution (`discover_model`, `query_data`), tableaux interactifs et boutons d'actions rapides.
+3. **Inspecteur Contextuel Droit** affichant les concepts canoniques mobilisés, les jointures SQL et les règles métier appliquées.
+
+### Lancement du Frontend Next.js (Application Autonome)
+
+```bash
+cd web
+
+# 1. Installation des dépendances
+npm install
+
+# 2. Configuration d'environnement
+echo "NEXT_PUBLIC_AXORA_API_URL=http://localhost:8000/api/v1" > .env.local
+
+# 3. Lancement en Mode Développement
+npm run dev
+
+# 4. Lancement en Mode Production
+npm run build && npm run start
+```
+
+### URLs d'Accès
+
+- **Dashboard Web (FastAPI App)** : [http://localhost:8000/ui](http://localhost:8000/ui)
+- **Dashboard Web (Next.js App)** : [http://localhost:3000](http://localhost:3000)
+- **Documentation API Swagger** : [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Spécification Technique FEAT-08** : [Conception Web Dashboard](axora_2.1-FEAT-08_Conception_Interface_Web_Dashboard.md)

@@ -121,3 +121,56 @@ L'interface web communique directement avec l'API FastAPI d'Axora (`src/axora/ap
 ---
 
 *Document de conception établi pour le développement du module FEAT-08 d'Axora.*
+
+
+---
+
+---
+
+## 🚀 5. Guide de Lancement & Déploiement Next.js (FEAT-08)
+
+### 5.1 Prérequis
+- **Node.js** : v18.17.0+ ou v20+
+- **npm** (v9+) / **pnpm** (v8+)
+- **FastAPI Axora Backend** : Démarré sur `http://localhost:8000`
+
+---
+
+### 5.2 Initialisation et Dépendances
+
+```bash
+cd web
+
+# 1. Installation des dépendances
+npm install
+
+# 2. Configuration d'environnement
+echo "NEXT_PUBLIC_AXORA_API_URL=http://localhost:8000/api/v1" > .env.local
+```
+
+---
+
+### 5.3 Commandes de Lancement
+
+- **Mode Développement (Hot-Reload)** :
+  ```bash
+  npm run dev
+  ```
+  *Interface accessible sur http://localhost:3000*
+
+- **Mode Production (Build & Start)** :
+  ```bash
+  npm run build && npm run start
+  ```
+
+---
+
+### 5.4 Accès aux Dashboards Web
+
+- **Dashboard Web (Next.js App)** : [http://localhost:3000](http://localhost:3000)
+- **Dashboard Web Intégré (FastAPI App)** : [http://localhost:8000/ui](http://localhost:8000/ui)
+- **Documentation API Swagger** : [http://localhost:8000/docs](http://localhost:8000/docs)
+
+---
+
+*Spécification et guide de démarrage FEAT-08 mis à jour pour Axora v2.1.*
