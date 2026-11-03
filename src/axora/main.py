@@ -1,5 +1,6 @@
 from pathlib import Path
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from axora.api.routes import router as api_router
 
@@ -7,6 +8,15 @@ app = FastAPI(
     title="Axora API & Dashboard",
     description="From intent to action. Conversational Agent API & Web UI Dashboard",
     version="0.5.0",
+)
+
+# Enable CORS for Next.js web application and cross-origin requests
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(api_router)
