@@ -1,6 +1,6 @@
 import pytest
 from axora.agent.decisions import AgentDecision, ToolCall
-from axora.llm.provider import GroqLLMAdapter, MockLLMAdapter, NvidiaLLMAdapter, OpenAILLMAdapter, get_llm_adapter
+from axora.llm.provider import GeminiLLMAdapter, GroqLLMAdapter, MockLLMAdapter, NvidiaLLMAdapter, OpenAILLMAdapter, get_llm_adapter
 
 
 @pytest.mark.asyncio
@@ -236,3 +236,29 @@ def test_parse_agent_decision_from_json_malformed_failed_gen():
     decision = parse_agent_decision_from_json(raw_str)
     assert decision.type == "final_answer"
     assert "Voici la liste de tous les membres" in decision.content
+
+
+@pytest.mark.asyncio
+async def test_gemini_llm_adapter_fallback():
+    adapter = GeminiLLMAdapter(api_key="AIzaSy_your_free_key_here", model="gemini-1.5-flash")
+    assert adapter.provider_name == "gemini"
+    assert adapter.model_name == "gemini-1.5-flash"
+
+    decision = await adapter.decide("Lister les membres")
+    assert isinstance(decision, AgentDecision)
+    assert decision.type in ("call_tool", "final_answer")
+
+
+@pytest.mark.asyncio
+async def test_gemini_llm_adapter_custom_model():
+    adapter = GeminiLLMAdapter(api_key="AIzaSy_custom", model="gemini-2.0-flash")
+    assert adapter.provider_name == "gemini"
+    assert adapter.model_name == "gemini-2.0-flash"
+
+
+def test_get_llm_adapter_factory_gemini():
+    gemini_adapter = get_llm_adapter("gemini")
+    assert gemini_adapter.provider_name == "gemini"
+
+    google_adapter = get_llm_adapter("google")
+    assert google_adapter.provider_name == "gemini"

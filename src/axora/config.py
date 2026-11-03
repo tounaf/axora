@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@db:5432/axora"
 
     # LLM Settings
-    LLM_PROVIDER: str = "mock"  # Options: groq, nvidia, openai, anthropic, ollama, mock
+    LLM_PROVIDER: str = "mock"  # Options: groq, nvidia, gemini, openai, anthropic, ollama, mock
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4o-mini"
 
@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: str = ""
     NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
     NVIDIA_MODEL: str = "meta/llama-3.1-70b-instruct"
+
+    # Google Gemini / Google AI Studio Settings (Free API Tokens at aistudio.google.com)
+    GEMINI_API_KEY: str = ""
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+    GEMINI_MODEL: str = "gemini-1.5-flash"
 
     # Agent Loop Settings
     MAX_AGENT_ITERATIONS: int = 8

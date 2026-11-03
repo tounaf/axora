@@ -560,10 +560,123 @@ class NvidiaLLMAdapter:
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
 
+class GeminiLLMAdapter:
+    """Production Google Gemini LLM Adapter utilizing Google AI Studio API (OpenAI-compatible endpoint)."""
+
+    def __init__(self, api_key: str | None = None, model: str | None = None, base_url: str | None = None) -> None:
+        self._api_key = api_key or settings.GEMINI_API_KEY or settings.LLM_API_KEY
+        self._model = model or settings.GEMINI_MODEL or settings.LLM_MODEL
+        self._base_url = base_url or settings.GEMINI_BASE_URL
+
+    @property
+    def provider_name(self) -> str:
+        return "gemini"
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    async def decide(
+        self,
+        prompt: str,
+        tools_schema: list[dict[str, Any]] | None = None,
+        system_instruction: str | None = None,
+    ) -> AgentDecision:
+        if not self._api_key or self._api_key.startswith("AIzaSy_your") or self._api_key.startswith("sk-proj") or self._api_key.startswith("gsk_") or self._api_key.startswith("nvapi"):
+            logger.info("[GEMINI LLM] Placeholder/No API Key detected -> Using Dynamic Mock LLM Adapter.")
+            fallback = MockLLMAdapter()
+            return await fallback.decide(prompt, tools_schema, system_instruction)
+
+        json_schema_instruction = (
+            "Respond ONLY with a valid JSON object matching the AgentDecision schema. "
+            "Output pure JSON with the keys:\n"
+            "{\n"
+            '  "type": "call_tool" | "ask_user" | "final_answer",\n'
+            '  "tool_call": {"name": string, "arguments": dict} | null,\n'
+            '  "content": string | null\n'
+            "}"
+        )
+        base_sys = system_instruction or "You are Axora Intent Agent powered by Google Gemini. Fulfill user intents by calling appropriate tools or providing final answers."
+        if "json" not in base_sys.lower():
+            sys_msg = f"{base_sys}\n\n{json_schema_instruction}"
+        else:
+            sys_msg = base_sys
+
+        try:
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            }
+            body: dict[str, Any] = {
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.0,
+            }
+
+            if tools_schema:
+                body["tools"] = tools_schema
+                body["tool_choice"] = "auto"
+            else:
+                body["response_format"] = {"type": "json_object"}
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
+                if resp.is_error:
+                    try:
+                        err_data = resp.json()
+                        failed_gen = err_data.get("error", {}).get("failed_generation")
+                        if failed_gen:
+                            logger.info("[GEMINI LLM API] Recovering decision from failed_generation payload.")
+                            return parse_agent_decision_from_json(failed_gen, prompt=prompt)
+                    except Exception as recovery_exc:
+                        logger.debug(f"[GEMINI LLM API] Recovery attempt failed: {recovery_exc}")
+
+                    logger.error(
+                        f"[GEMINI LLM API ERROR] Status: {resp.status_code} | "
+                        f"Response: {resp.text}"
+                    )
+
+                resp.raise_for_status()
+                data = resp.json()
+                msg = data["choices"][0]["message"]
+
+                tool_calls = msg.get("tool_calls")
+                if tool_calls and isinstance(tool_calls, list) and len(tool_calls) > 0:
+                    first_fn = tool_calls[0].get("function", {})
+                    fn_name = first_fn.get("name")
+                    fn_args_raw = first_fn.get("arguments", {})
+                    if isinstance(fn_args_raw, str):
+                        try:
+                            fn_args = json.loads(fn_args_raw)
+                        except Exception:
+                            fn_args = {}
+                    else:
+                        fn_args = fn_args_raw or {}
+
+                    return AgentDecision(
+                        type="call_tool",
+                        tool_call=ToolCall(name=fn_name, arguments=fn_args),
+                    )
+
+                raw_json = msg.get("content") or ""
+                return parse_agent_decision_from_json(raw_json, prompt=prompt)
+
+        except Exception as exc:
+            logger.warning(f"[GEMINI LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")
+            fallback = MockLLMAdapter()
+            return await fallback.decide(prompt, tools_schema, system_instruction)
+
+
 def get_llm_adapter(provider: str | None = None) -> LLMAdapter:
     """Factory function returning the configured LLM adapter."""
     prov = (provider or settings.LLM_PROVIDER).lower()
-    if prov == "groq":
+    if prov in ("gemini", "google"):
+        return GeminiLLMAdapter()
+    elif prov == "groq":
         return GroqLLMAdapter()
     elif prov == "nvidia":
         return NvidiaLLMAdapter()
