@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from axora.agent.runtime import AgentRuntime
@@ -10,22 +11,38 @@ from axora.semantic.service import SemanticModelService
 from axora.tools.create_record import CreateRecordTool
 from axora.tools.discover_model import DiscoverModelTool
 from axora.tools.query_data import QueryDataTool
+from axora.tools.render_view import RenderViewTool
 from axora.tools.registry import ToolRegistry
 from axora.tools.update_record import UpdateRecordTool
+from axora.views.registry import ViewRegistry
+from axora.views.builders import (
+    DynamicTableViewBuilder,
+    DynamicChartViewBuilder,
+    DynamicMetricCardsBuilder,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["Conversational Agent API"])
 
-# Initialize Agent Runtime Dependency
+# Initialize Semantic Model & Tables
 YAML_PATH = Path("src/axora/semantic/definitions/gestion_paroissiale.yaml")
 semantic_service = SemanticModelService.from_yaml(YAML_PATH)
 build_dynamic_tables(semantic_service)
 
+# Initialize Extensible View Registry
+view_registry = ViewRegistry()
+view_registry.register(DynamicTableViewBuilder(semantic_service))
+view_registry.register(DynamicChartViewBuilder())
+view_registry.register(DynamicMetricCardsBuilder())
+
+# Initialize Tool Registry
 tool_registry = ToolRegistry()
 tool_registry.register(DiscoverModelTool(semantic_service))
 tool_registry.register(QueryDataTool(semantic_service, AsyncSessionLocal))
 tool_registry.register(CreateRecordTool(semantic_service, AsyncSessionLocal))
 tool_registry.register(UpdateRecordTool(semantic_service, AsyncSessionLocal))
+tool_registry.register(RenderViewTool(view_registry))
 
+# Initialize Agent Runtime
 agent_runtime = AgentRuntime(tool_registry=tool_registry, llm_adapter=get_llm_adapter())
 
 
@@ -37,6 +54,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     conversation_id: str
     response: str
+    view: dict[str, Any] | None = None
     status: str = "completed"
 
 
@@ -77,12 +95,27 @@ async def process_chat_message(request: ChatRequest) -> ChatResponse:
             detail=f"Failed to process intent: {exc}",
         ) from exc
 
-    # 4. Record agent response
+    # 4. Extract view payload if any view or query tool was executed
+    view_data: dict[str, Any] | None = None
+    if agent_runtime.last_context and agent_runtime.last_context.observations:
+        for obs in reversed(agent_runtime.last_context.observations):
+            if obs.tool_call.name == "render_view" and obs.result.status == "success" and isinstance(obs.result.data, dict):
+                view_data = obs.result.data
+                break
+            elif obs.tool_call.name == "query_data" and obs.result.status == "success" and isinstance(obs.result.data, dict):
+                records = obs.result.data.get("records", [])
+                if records and view_registry.has("table"):
+                    table_view = view_registry.build_view("table", obs.result.data)
+                    view_data = table_view.model_dump()
+                break
+
+    # 5. Record agent response
     conversation_repo.add_message(session.id, role="assistant", content=agent_response)
 
     return ChatResponse(
         conversation_id=session.id,
         response=agent_response,
+        view=view_data,
         status="completed",
     )
 
@@ -115,4 +148,12 @@ async def list_registered_tools():
     """Lists registered tools and their parameters schemas."""
     return {
         "tools": tool_registry.list_schemas()
+    }
+
+
+@router.get("/views/types")
+async def list_view_types():
+    """Lists registered extensible view types."""
+    return {
+        "view_types": view_registry.list_types()
     }

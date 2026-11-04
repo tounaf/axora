@@ -1,3 +1,4 @@
+from axora.agent.context import AgentContext
 from axora.agent.loop import run_agent_loop
 from axora.llm.interface import LLMAdapter
 from axora.llm.provider import get_llm_adapter
@@ -14,6 +15,7 @@ class AgentRuntime:
     ) -> None:
         self._tool_registry = tool_registry
         self._llm_adapter = llm_adapter or get_llm_adapter()
+        self._last_context: AgentContext | None = None
 
     @property
     def tool_registry(self) -> ToolRegistry:
@@ -23,6 +25,10 @@ class AgentRuntime:
     def llm_adapter(self) -> LLMAdapter:
         return self._llm_adapter
 
+    @property
+    def last_context(self) -> AgentContext | None:
+        return self._last_context
+
     async def process_intent(
         self,
         user_message: str,
@@ -30,10 +36,14 @@ class AgentRuntime:
         max_iterations: int | None = None,
     ) -> str:
         """Processes a natural language intent through the agent execution loop."""
-        return await run_agent_loop(
+        ctx = AgentContext(user_message=user_message, history=history or [])
+        res = await run_agent_loop(
             user_message=user_message,
             llm_adapter=self._llm_adapter,
             tool_registry=self._tool_registry,
             history=history,
             max_iterations=max_iterations,
+            context=ctx,
         )
+        self._last_context = ctx
+        return res

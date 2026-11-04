@@ -14,6 +14,7 @@ async def run_agent_loop(
     tool_registry: ToolRegistry,
     history: list[dict[str, str]] | None = None,
     max_iterations: int | None = None,
+    context: AgentContext | None = None,
 ) -> str:
     """Executes the bounded Agent loop.
 
@@ -24,7 +25,8 @@ async def run_agent_loop(
     5. Repeats until final answer, clarification question, or iteration limit.
     """
     limit = max_iterations or settings.MAX_AGENT_ITERATIONS
-    context = AgentContext(user_message=user_message, history=history or [])
+    if context is None:
+        context = AgentContext(user_message=user_message, history=history or [])
     tools_schema = tool_registry.list_schemas()
 
     system_instruction = (

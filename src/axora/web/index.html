@@ -296,7 +296,7 @@
           activeConversationId = data.conversation_id;
         }
 
-        appendAgentResponseCard(data.response);
+        appendAgentResponseCard(data.response, data.view);
 
       } catch (err) {
         removeElement(loadingId);
@@ -348,12 +348,51 @@
       return id;
     }
 
-    function appendAgentResponseCard(markdownResponse) {
+    function appendAgentResponseCard(markdownResponse, viewData) {
       const stream = document.getElementById('chatStream');
       const div = document.createElement('div');
       div.className = "flex items-start space-x-3.5";
 
       const renderedHtml = marked.parse(markdownResponse);
+
+      let viewHtml = '';
+      if (viewData && viewData.view_type === 'table' && viewData.data) {
+        const cols = viewData.data.columns || [];
+        const rows = viewData.data.rows || [];
+        viewHtml = `
+          <div class="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs mt-3">
+            <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-semibold text-slate-800">
+              <span>${escapeHtml(viewData.title || 'Tableau')}</span>
+              <span class="text-[11px] text-slate-500">${rows.length} ligne(s)</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr class="bg-slate-50/50 border-b border-slate-200 text-slate-700 font-semibold">
+                    ${cols.map(c => `<th class="py-2 px-3">${escapeHtml(c.label)}</th>`).join('')}
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${rows.map(r => `
+                    <tr class="hover:bg-slate-50 transition">
+                      ${cols.map(c => {
+                        const val = r[c.key];
+                        if (c.data_type === 'badge' && val) {
+                          return `<td class="py-2 px-3"><span class="px-2 py-0.5 text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-full">${escapeHtml(String(val))}</span></td>`;
+                        }
+                        if (c.data_type === 'tags' && Array.isArray(val)) {
+                          return `<td class="py-2 px-3">${val.map(t => `<span class="px-1.5 py-0.5 bg-slate-100 text-slate-700 text-[10px] rounded mr-1">${escapeHtml(String(t))}</span>`).join('') || '<span class="text-slate-400 italic">Aucune</span>'}</td>`;
+                        }
+                        return `<td class="py-2 px-3">${escapeHtml(val != null ? String(val) : '-')}</td>`;
+                      }).join('')}
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      }
 
       div.innerHTML = `
         <div class="w-8 h-8 rounded-full bg-[#1a56db] text-white flex items-center justify-center font-bold text-sm shadow flex-shrink-0 ring-2 ring-blue-50">A</div>
@@ -368,6 +407,7 @@
           <div class="prose prose-slate prose-sm text-xs leading-relaxed text-slate-800 max-w-none">
             ${renderedHtml}
           </div>
+          ${viewHtml}
         </div>
       `;
       stream.appendChild(div);

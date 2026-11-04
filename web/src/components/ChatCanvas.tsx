@@ -3,11 +3,13 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Send, User } from 'lucide-react'
 import { marked } from 'marked'
+import { ViewDispatcher, ViewPayload } from './views/ViewDispatcher'
 
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  view?: ViewPayload | null
   timestamp: string
 }
 
@@ -70,6 +72,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
         id: 'agent-' + Date.now(),
         role: 'assistant',
         content: data.response || 'Traitement effectué.',
+        view: data.view || null,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
 
@@ -97,6 +100,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
       </div>
 
       <div className="flex-1 space-y-6">
+        {/* Welcome Banner */}
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
           <div className="flex items-center space-x-2.5">
             <div className="w-8 h-8 rounded-full bg-[#1a56db] text-white flex items-center justify-center font-bold text-sm shadow">A</div>
@@ -113,6 +117,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
           </div>
         </div>
 
+        {/* Message Stream */}
         {messages.map((m) =>
           m.role === 'user' ? (
             <div key={m.id} className="flex items-start justify-end space-x-3 pt-2">
@@ -143,6 +148,13 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
                   className="prose prose-slate prose-sm text-xs leading-relaxed text-slate-800 max-w-none"
                   dangerouslySetInnerHTML={{ __html: marked.parse(m.content) as string }}
                 />
+
+                {/* Render Extensible Dynamic UI View if available */}
+                {m.view && (
+                  <div className="pt-1">
+                    <ViewDispatcher view={m.view} />
+                  </div>
+                )}
               </div>
             </div>
           )
