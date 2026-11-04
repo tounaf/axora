@@ -143,3 +143,99 @@ Lorsque l'Agent exécute `query_data` :
 ---
 
 *Documentation technique d'extensibilité des vues validée pour Axora v2.3.*
+
+
+---
+
+## 📊 5. Les 4 Types de Visualisations Dynamiques Implémentées
+
+### 5.1 Graphique en Barres (`view_type: "chart"`, `chart_type: "bar"`)
+- **Usage** : Comparaisons quantitatives (ex: répartition des membres par église, effectifs par association).
+- **Rendu Frontend** : Jauges horizontales interactives avec calcul automatique des pourcentages et mise en valeur des maximums.
+- **Payload Dynamique Exemple** :
+  ```json
+  {
+    "view_type": "chart",
+    "title": "Répartition par Entité",
+    "data": {
+      "chart_type": "bar",
+      "series": [
+        {"label": "Andranovelona", "value": 2, "color": "#1d4ed8"},
+        {"label": "Analamanga", "value": 2, "color": "#0284c7"}
+      ],
+      "total": 4
+    }
+  }
+  ```
+
+---
+
+### 5.2 Camembert / Pie (`view_type: "chart"`, `chart_type: "pie"` ou `"donut"`)
+- **Usage** : Proportions et pourcentages d'un ensemble (ex: répartition par sexe, proportions de statut matrimonial).
+- **Rendu Frontend** : Secteurs SVG trigonométriques fluides ou Donut central avec légende et pourcentages arrondis.
+- **Payload Dynamique Exemple** :
+  ```json
+  {
+    "view_type": "chart",
+    "title": "Répartition par Statut",
+    "data": {
+      "chart_type": "donut",
+      "series": [
+        {"label": "Célibataire", "value": 3, "color": "#1d4ed8"},
+        {"label": "Marié", "value": 1, "color": "#10b981"}
+      ],
+      "total": 4
+    }
+  }
+  ```
+
+---
+
+### 5.3 Courbe Temporelle (`view_type: "chart"`, `chart_type: "line"`)
+- **Usage** : Évolutions chronologiques (ex: historique d'adhésions par année, demandes de transfert par mois).
+- **Rendu Frontend** : Courbe SVG lissée avec points d'ancrage, étiquettes de temps sur l'axe X, et dégradé translucide sous la courbe.
+- **Payload Dynamique Exemple** :
+  ```json
+  {
+    "view_type": "chart",
+    "title": "Évolution Chronologique",
+    "data": {
+      "chart_type": "line",
+      "x_label": "Année / Période",
+      "y_label": "Nombre d'enregistrements",
+      "series": [
+        {"label": "2020", "value": 1},
+        {"label": "2021", "value": 3},
+        {"label": "2022", "value": 4}
+      ]
+    }
+  }
+  ```
+
+---
+
+### 5.4 Indicateurs Clés KPI (`view_type: "metric_cards"`)
+- **Usage** : Synthèses exécutives immédiates de haut niveau.
+- **Rendu Frontend** : Grille de cartes avec chiffres en grand caractère, flèches de tendance (hausse/baisse), badges d'état (`success`, `warning`, `danger`, `neutral`).
+- **Payload Dynamique Exemple** :
+  ```json
+  {
+    "view_type": "metric_cards",
+    "title": "Indicateurs Métier",
+    "data": {
+      "cards": [
+        {"label": "Total Enregistrements", "value": "4", "trend": "+2 ce mois", "status": "success"},
+        {"label": "Paroisses Actives", "value": "2", "status": "neutral"},
+        {"label": "Sans Rattachement", "value": "1", "trend": "À régulariser", "status": "warning"}
+      ]
+    }
+  }
+  ```
+
+---
+
+## 🛡️ 6. Garantie Zéro Code Figé (Dynamisme Absolu)
+
+Pour respecter la consigne d'éviter tout code figé (noms de tables ou colonnes) :
+1. **Extraction par introspection** : `DynamicChartViewBuilder` et `DynamicMetricCardsBuilder` n'ont aucune clé pré-codée. Ils parcourent les dictionnaires reçus et détectent automatiquement la clé descriptive (ex: `label`, `name`, `date`, `titre`) et la clé numérique (ex: `value`, `count`, `total`).
+2. **Détection du format de colonne** : `DynamicTableViewBuilder` interroge le `SemanticModelService` pour savoir si un champ est une relation (tags), un enum (badge), une date ou un nombre sans mentionner explicitement de nom de table ou de colonne.

@@ -122,3 +122,45 @@ def test_api_view_types_endpoint():
     assert "table" in types
     assert "chart" in types
     assert "metric_cards" in types
+
+
+def test_dynamic_chart_view_builder_pie_and_line():
+    builder = DynamicChartViewBuilder()
+
+    # Test Camembert (pie)
+    pie_data = [
+        {"name": "CELIBATAIRE", "count": 3},
+        {"name": "MARIE", "count": 1},
+    ]
+    pie_payload = builder.build(pie_data, chart_type="pie", title="Statut Matrimonial")
+    assert pie_payload.view_type == "chart"
+    assert pie_payload.data["chart_type"] == "pie"
+    assert len(pie_payload.data["series"]) == 2
+    assert pie_payload.data["total"] == 4
+
+    # Test Courbe Temporelle (line)
+    line_data = [
+        {"date": "2020", "total": 10},
+        {"date": "2021", "total": 25},
+        {"date": "2022", "total": 45},
+    ]
+    line_payload = builder.build(line_data, chart_type="line", title="Adhésions par Année")
+    assert line_payload.view_type == "chart"
+    assert line_payload.data["chart_type"] == "line"
+    assert len(line_payload.data["series"]) == 3
+    assert line_payload.data["series"][0]["label"] == "2020"
+    assert line_payload.data["series"][0]["value"] == 10.0
+
+
+def test_dynamic_metric_cards_builder_with_trends():
+    builder = DynamicMetricCardsBuilder()
+    cards_data = [
+        {"title": "Membres Actifs", "metric": "4", "trend": "+2 ce mois", "status": "success", "subtitle": "Paroisses"},
+        {"title": "Membres sans Association", "metric": "1", "trend": "Régularisation requise", "status": "warning"},
+    ]
+    payload = builder.build(cards_data, title="KPIs Paroissiaux")
+    assert payload.view_type == "metric_cards"
+    assert len(payload.data["cards"]) == 2
+    assert payload.data["cards"][0]["label"] == "Membres Actifs"
+    assert payload.data["cards"][0]["trend"] == "+2 ce mois"
+    assert payload.data["cards"][0]["status"] == "success"

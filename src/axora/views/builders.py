@@ -49,7 +49,7 @@ class DynamicTableViewBuilder(ViewBuilderInterface):
 
         return ViewPayload(
             view_type="table",
-            title=title or f"Liste des {entity}s" if entity else "Tableau de Données",
+            title=title or (f"Liste des {entity}s" if entity else "Tableau de Données"),
             description=description or f"{len(records)} enregistrement(s) trouvé(s)",
             data={
                 "entity": entity,
@@ -61,7 +61,7 @@ class DynamicTableViewBuilder(ViewBuilderInterface):
 
 
 class DynamicChartViewBuilder(ViewBuilderInterface):
-    """Generates charts (bar, pie, donut, line) from aggregated series data."""
+    """Generates charts (bar, pie/camembert, donut, line/courbe temporelle) dynamically from aggregated data."""
 
     @property
     def view_type(self) -> str:
@@ -70,24 +70,41 @@ class DynamicChartViewBuilder(ViewBuilderInterface):
     def build(
         self,
         data: Any,
-        chart_type: str = "bar",
+        chart_type: str = "bar",  # "bar", "pie", "donut", "line"
         title: str = "Statistiques",
         description: str | None = None,
         x_label: str = "Catégorie",
         y_label: str = "Valeur",
         **kwargs: Any
     ) -> ViewPayload:
-        series = data if isinstance(data, list) else data.get("series", []) if isinstance(data, dict) else []
+        raw_series = data if isinstance(data, list) else data.get("series", []) if isinstance(data, dict) else []
 
-        palette = ["#1d4ed8", "#0284c7", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6"]
+        palette = [
+            "#1d4ed8", "#0284c7", "#10b981", "#f59e0b",
+            "#8b5cf6", "#ec4899", "#14b8a6", "#f97316",
+        ]
 
         formatted_series = []
-        for idx, item in enumerate(series):
+        for idx, item in enumerate(raw_series):
             if isinstance(item, dict):
-                label = item.get("label") or str(item.get("name", f"Item {idx + 1}"))
-                val = item.get("value") or item.get("count", 0)
+                # Auto-detect label and value keys dynamically
+                label = item.get("label") or item.get("name") or item.get("date") or item.get("key") or str(list(item.values())[0] if item else f"Item {idx + 1}")
+                val = item.get("value") or item.get("count") or item.get("total")
+                if val is None:
+                    # Look for first numeric value in item dict
+                    for v in item.values():
+                        if isinstance(v, (int, float)):
+                            val = v
+                            break
+                    if val is None:
+                        val = 0
+
                 color = item.get("color") or palette[idx % len(palette)]
-                formatted_series.append({"label": label, "value": val, "color": color})
+                formatted_series.append({
+                    "label": str(label),
+                    "value": float(val) if isinstance(val, (int, float)) else 0,
+                    "color": color,
+                })
 
         return ViewPayload(
             view_type="chart",
@@ -98,23 +115,47 @@ class DynamicChartViewBuilder(ViewBuilderInterface):
                 "x_label": x_label,
                 "y_label": y_label,
                 "series": formatted_series,
+                "total": sum(s["value"] for s in formatted_series),
             },
         )
 
 
 class DynamicMetricCardsBuilder(ViewBuilderInterface):
-    """Generates metric KPI cards."""
+    """Generates dynamic KPI indicator tiles with values, trends, and status indicators."""
 
     @property
     def view_type(self) -> str:
         return "metric_cards"
 
-    def build(self, data: Any, title: str = "Indicateurs Clés", description: str | None = None, **kwargs: Any) -> ViewPayload:
-        cards = data if isinstance(data, list) else data.get("cards", []) if isinstance(data, dict) else []
+    def build(
+        self,
+        data: Any,
+        title: str = "Indicateurs Clés (KPI)",
+        description: str | None = None,
+        **kwargs: Any
+    ) -> ViewPayload:
+        raw_cards = data if isinstance(data, list) else data.get("cards", []) if isinstance(data, dict) else []
+
+        formatted_cards = []
+        for idx, item in enumerate(raw_cards):
+            if isinstance(item, dict):
+                label = item.get("label") or item.get("title") or f"Indicateur {idx + 1}"
+                val = item.get("value") or item.get("metric") or "0"
+                desc = item.get("description") or item.get("subtitle")
+                trend = item.get("trend")
+                status = item.get("status") or item.get("trend_type") or "neutral"
+
+                formatted_cards.append({
+                    "label": str(label),
+                    "value": str(val),
+                    "description": str(desc) if desc else None,
+                    "trend": str(trend) if trend else None,
+                    "status": status if status in ("neutral", "success", "warning", "danger") else "neutral",
+                })
 
         return ViewPayload(
             view_type="metric_cards",
             title=title,
             description=description,
-            data={"cards": cards},
+            data={"cards": formatted_cards},
         )
