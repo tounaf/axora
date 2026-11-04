@@ -4,12 +4,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: axora-api
+    container_name: axora_api
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5431/${POSTGRES_DB}
       PYTHONPATH: /app/src
     ports:
       - "${API_PORT:-8000}:8000"
@@ -29,7 +29,7 @@ services:
 
   db:
     image: postgres:17-alpine
-    container_name: axora-db
+    container_name: axora_db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -45,6 +45,21 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin_axora
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: dev
+    ports:
+      - "8881:80"
+    # volumes:
+    #   - pgadmin_data:/var/lib/pgadmin
+    # networks:
+    #   - pg-network
+    depends_on:
+      - db
 
 volumes:
   axora-postgres-data:

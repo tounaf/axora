@@ -18,7 +18,7 @@ COPY --chown=app:app src/ ./src/
 
 ENV PYTHONPATH=/app/src
 
-USER app
+# USER app
 
 EXPOSE 8000
 
