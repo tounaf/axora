@@ -1,162 +1,284 @@
 # AXORA — Conception Technique : Outils de Visualisation Dynamique & Generative UI (View Tools)
 
-> **Document de Conception Fonctionnelle et Technique (Spécification v2.2)**
-> *Présentation enrichie des résultats de l'agent : Grilles/Tableaux interactifs, Graphiques statistiques, Cartes KPI & Graphes relationnels.*
+> **Document de Conception Fonctionnelle et Technique (Spécification v2.2 - 100% Dynamique & Agnostique du Domaine)**
+> *Principe directeur : Aucune table, aucune colonne ni entité n'est figée en dur dans le code ou les schémas. Tout est dérivé à la volée du Modèle Sémantique et du schéma de données actif.*
 
 ---
 
-## 💡 1. Compréhension du Besoin Métier
+## 💡 1. Compréhension du Besoin & Principes Architecturaux
 
-### Le Constat Actuel
-Actuellement, lorsque l'Agent Axora traite une intention utilisateur (ex: *"Lister les membres"*, *"Statistique des membres par paroisse"*, *"Répartition des âges"*), la réponse finale est renvoyée sous forme de **texte Markdown brut** ou de tableau Markdown statique.
-Bien que lisible, ce format présente des limites majeures pour l'utilisateur final :
-1. **Pas d'interactivité** : Impossible de trier dynamiquement les colonnes, de filtrer localement, de paginer ou d'exporter facilement.
-2. **Faible impact visuel pour les statistiques** : Une liste textuelle comme `Andranovelona: 2, Analamanga: 2` est beaucoup moins percutante qu'un graphique en barres ou un diagramme circulaire (Pie Chart).
-3. **Absence de hiérarchie visuelle pour les métriques clés** : Un nombre total ou un taux d'adhésion devrait être affiché sous forme de **Cartes Métriques / KPI** immédiatement lisibles.
+### 1.1 Objectif
+Permettre à l'Agent Axora de restituer les données métier sous forme de composants interactifs riches (**Tableaux interactifs / Data Grids**, **Graphiques statistiques**, **Cartes KPI**) plutôt qu'en simple texte brut ou Markdown statique, **SANS JAMAIS figer de noms de tables ni de colonnes** dans le code.
 
-### La Solution : Architecture "Generative UI" & "View Tools"
-L'Agent Axora ne doit pas seulement être capable de faire du *Query* ou de la *Mutation* de données, il doit être capable de **décider de la meilleure forme de restitution visuelle** pour l'utilisateur en appelant des **Outils de Visualisation (View Tools)**.
+### 1.2 Règle d'Or : Génération Sémantique 100% Dynamique
+Pour préserver la portabilité totale d'Axora sur n'importe quel domaine métier (qu'il s'agisse de gestion paroissiale, de vente de marchandises PPN, de cabinet juridique ou de logistique) :
+1. **Zéro constante codée en dur** : Ni nom d'entité, ni nom de colonne, ni nom de table n'apparaît dans les signatures ou les types de code.
+2. **Dérivation automatique via `SemanticModelService`** :
+   - Les types d'affichage de colonnes (`badge`, `tag`, `date`, `number`, `text`) sont déduits automatiquement des types d'attributs du manifeste (`attribute_def.type`, `attribute_def.allowed_values`).
+   - Les colonnes relationnelles (1-N, N-N) sont détectées à partir de `entity_def.relationships` et formatées dynamiquement.
+3. **Schéma Universel d'Échange Agent ⇄ UI** : L'Agent renvoie une charge utile générique que le frontend React/Next.js sait interpréter sans connaître le modèle sous-jacent.
 
 ```text
-[Intention Utilisateur]
-         │
-         ▼
-[Runtime Agent Axora]
-         │
-         ├─── 1. Query Tool: Récupère les données (`query_data`)
-         │
-         └─── 2. View Tool: Sélectionne le composant visuel adapté :
-                  ├── `render_table`       (Grille dense, tri, recherche, export)
-                  ├── `render_chart`       (Barres, Camembert, Courbes, Donut)
-                  ├── `render_metric_card` (KPIs, Compteurs, Résumés exécutifs)
-                  └── `render_graph`       (Réseaux de relations, organigrammes)
+[Modèle Sémantique Actif (YAML/DB)]
+              │
+              ▼
+    [Agent Decision Loop]
+              │
+    ┌─────────┴─────────────────────────────┐
+    ▼                                       ▼
+`query_data` (Extraction brute)      `View Builder` (Génération dynamique du View Contract)
+    │                                       │
+    └──────────────────┬────────────────────┘
+                       ▼
+       [Contrat Visuel Universel JSON]
+       (columns, rows, chart_type, series)
+                       │
+                       ▼
+       [Next.js Dynamic View Dispatcher]
+       ├── `TableView` (Tri, recherche, export)
+       ├── `ChartView` (Bar, Pie, Donut, Line)
+       └── `MetricCardView` (KPIs)
 ```
 
 ---
 
-## 🧱 2. Catalogue des Outils de Visualisation Proposés
+## 📐 2. Schémas Universels des Outils de Visualisation (View Contracts)
 
-### 2.1 Outil `render_table` (Data Grid & Tableaux Riches)
-- **Rôle** : Restituer des listes d'entités avec pagination, recherche locale, tri par colonne et actions contextuelles.
-- **Paramètres Schéma JSON** :
-  ```json
-  {
-    "title": "Liste des Membres",
-    "description": "4 membres enregistrés",
-    "columns": [
-      {"key": "nom", "label": "Nom de famille", "type": "string", "sortable": true},
-      {"key": "prenom", "label": "Prénom", "type": "string", "sortable": true},
-      {"key": "statut_matrimonial", "label": "Statut", "type": "badge"},
-      {"key": "paroisse", "label": "Paroisse", "type": "string"},
-      {"key": "associations", "label": "Associations", "type": "tags"}
-    ],
-    "rows": [
-      {"nom": "Rakoto", "prenom": "Jean", "statut_matrimonial": "CELIBATAIRE", "paroisse": "Andranovelona", "associations": ["Association des Jeunes"]},
-      {"nom": "Rasoa", "prenom": "Marie", "statut_matrimonial": "CELIBATAIRE", "paroisse": "Andranovelona", "associations": []}
-    ],
-    "actions": ["export_csv", "export_pdf", "filter"]
-  }
-  ```
+Les outils de visualisation ne manipulent que des structures abstraites et auto-descriptives.
 
----
+### 2.1 Contrat Universel `render_table` (Grille de Données Dynamique)
 
-### 2.2 Outil `render_chart` (Graphiques Statistiques)
-- **Rôle** : Afficher des visualisations analytiques pour répondre à des questions quantitatives ou comparatives.
-- **Types de Graphiques Supportés** :
-  - `bar` : Répartitions comparatives (ex: Membres par paroisse, Membres par association).
-  - `donut` / `pie` : Proportions (ex: Répartition Homme / Femme, Statut célibataire vs marié).
-  - `line` : Évolutions temporelles (ex: Évolution des adhésions ou passages par mois).
-- **Paramètres Schéma JSON** :
-  ```json
-  {
-    "chart_type": "bar",
-    "title": "Répartition des Membres par Paroisse",
-    "x_axis_label": "Paroisse",
-    "y_axis_label": "Nombre de membres",
-    "data": [
-      {"label": "Andranovelona", "value": 2, "color": "#1d4ed8"},
-      {"label": "Analamanga", "value": 2, "color": "#0284c7"}
-    ]
-  }
-  ```
+L'outil `render_table` ne fige aucune colonne ; les métadonnées de chaque colonne sont générées dynamiquement à partir des attributs inspectés dans le modèle sémantique.
 
----
-
-### 2.3 Outil `render_metric_card` (Cartes KPI & Synthèses)
-- **Rôle** : Mettre en valeur des chiffres clés immédiats (Total membres, Moyenne d'âge, Nouveaux arrivants).
-- **Paramètres Schéma JSON** :
-  ```json
-  {
-    "cards": [
-      {
-        "title": "Total des Membres",
-        "value": "4",
-        "trend": "+2 ce mois",
-        "trend_type": "positive",
-        "icon": "users"
+#### Schéma d'Appel de l'Outil (Tool Signature)
+```json
+{
+  "name": "render_table",
+  "description": "Restitue un ensemble d'enregistrements sous forme de tableau interactif dynamique avec tri, recherche et export.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "description": "Titre du tableau adapté au contexte"
       },
-      {
-        "title": "Paroisses Actives",
-        "value": "2",
-        "trend": "100% opérationnelles",
-        "trend_type": "neutral",
-        "icon": "church"
+      "entity": {
+        "type": "string",
+        "description": "Nom de l'entité canonique concernée (découverte dynamiquement)"
       },
-      {
-        "title": "Membres Sans Association",
-        "value": "1",
-        "trend": "Rasoa Marie",
-        "trend_type": "warning",
-        "icon": "alert-circle"
+      "columns": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {"type": "string", "description": "Clé technique de l'attribut"},
+            "label": {"type": "string", "description": "Libellé lisible généré d'après la description sémantique"},
+            "data_type": {
+              "type": "string",
+              "enum": ["string", "number", "date", "badge", "tags", "boolean"]
+            },
+            "sortable": {"type": "boolean", "default": true}
+          },
+          "required": ["key", "label", "data_type"]
+        }
+      },
+      "rows": {
+        "type": "array",
+        "items": {"type": "object"},
+        "description": "Liste d'objets clé-valeur correspondant aux colonnes déclarées"
+      },
+      "summary_text": {
+        "type": "string",
+        "description": "Texte de synthèse explicatif accompagnant la grille"
       }
-    ]
+    },
+    "required": ["title", "columns", "rows"]
   }
-  ```
+}
+```
+
+#### Déduction Automatique du `data_type` par le Backend
+À l'exécution, le moteur inspecte l'attribut dans `entity_def.attributes` :
+- Si `attr_def.allowed_values` existe (ex: enum statut, rôles) -> `data_type = "badge"`.
+- Si l'attribut est une relation `many-to-many` ou `one-to-many` retournant une liste -> `data_type = "tags"`.
+- Si `attr_def.type == "date"` -> `data_type = "date"` (avec formatage localisé automatique `DD/MM/YYYY`).
+- Si `attr_def.type in ("integer", "float", "number")` -> `data_type = "number"` (alignement à droite).
+- Sinon -> `data_type = "string"`.
 
 ---
 
-### 2.4 Outil `render_network_graph` (Graphe Sémantique & Liens Relationnels)
-- **Rôle** : Représenter visuellement les liens entre entités (Ex: Paroisse → Zones → Membres → Associations).
-- **Technologie Web** : React Flow / Vis.js.
+### 2.2 Contrat Universel `render_chart` (Graphiques Statistiques Agnostiques)
+
+Aucun axe ni série n'est figé. Que l'utilisateur demande une statistique par région, par statut, par église ou par produit, le schéma reste strictement le même.
+
+#### Schéma d'Appel de l'Outil (Tool Signature)
+```json
+{
+  "name": "render_chart",
+  "description": "Génère un graphique statistique interactif (barres, camembert, lignes) à partir de données catégorielles ou chronologiques.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "chart_type": {
+        "type": "string",
+        "enum": ["bar", "donut", "pie", "line"]
+      },
+      "title": {
+        "type": "string",
+        "description": "Titre explicite du graphique"
+      },
+      "category_key": {
+        "type": "string",
+        "description": "Nom du champ d'axe ou de catégorie"
+      },
+      "metric_key": {
+        "type": "string",
+        "description": "Nom du champ de mesure ou valeur"
+      },
+      "series": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": {"type": "string", "description": "Libellé de la catégorie"},
+            "value": {"type": "number", "description": "Valeur numérique calculée"},
+            "color": {"type": "string", "description": "Code couleur hex optionnel"}
+          },
+          "required": ["label", "value"]
+        }
+      },
+      "analysis_text": {
+        "type": "string",
+        "description": "Commentaire d'analyse métier produit par l'agent"
+      }
+    },
+    "required": ["chart_type", "title", "series"]
+  }
+}
+```
 
 ---
 
-## 🔄 3. Intégration dans le Cycle de Décision de l'Agent
+### 2.3 Contrat Universel `render_metric_cards` (Tuiles KPIs Dynamiques)
 
-Comment l'Agent choisit-il le View Tool approprié ?
+Permet d'afficher des indicateurs de haut niveau calculés dynamiquement.
 
-1. **Cas 1 : Question d'identification individuelle** (Ex: *"Qui est Rasoa ?"*)
-   -> L'Agent privilégie une **Fiche Profil** (`render_metric_card` ou texte explicatif riche).
-
-2. **Cas 2 : Question d'inventaire ou de liste** (Ex: *"Lister les membres", "Quels membres n'ont pas d'association ?"*)
-   -> L'Agent appelle `query_data` puis transmet le jeu de données à `render_table` avec les colonnes et badges adéquats.
-
-3. **Cas 3 : Question de statistique ou de répartition** (Ex: *"Donne-moi les statistiques de membres par église"*)
-   -> L'Agent agrège les données et génère un appel `render_chart` (Bar/Donut) accompagné d'un court commentaire d'analyse.
-
----
-
-## 🎨 4. Composants Front-End de Rendu (Next.js / React)
-
-Dans l'application Web (`web/src/components/views/`) :
-- `TableView.tsx` : Rendu du tableau avec Tailwind CSS, tri (`useState`), recherche instantanée et export CSV.
-- `ChartView.tsx` : Composant basé sur Recharts ou Chart.js / SVG pur ultra-léger.
-- `MetricCardView.tsx` : Grille de tuiles KPI avec badges d'alerte et icônes Lucide.
-- `ViewDispatcher.tsx` : Composant qui inspecte la réponse de l'agent et monte automatiquement le bon visualiseur.
-
----
-
-## 📋 5. Plan d'Implémentation Recommandé
-
-1. **Phase 1 (Backend)** :
-   - Déclaration des interfaces et schémas JSON des View Tools (`render_table`, `render_chart`, `render_metric_card`) dans `src/axora/tools/views/`.
-   - Intégration dans le registre `ToolRegistry`.
-2. **Phase 2 (Frontend)** :
-   - Création des composants de rendu React correspondants dans `web/src/components/views/`.
-   - Support du rendu interactif dans `ChatCanvas.tsx`.
-3. **Phase 3 (Validation & Tests)** :
-   - Tests de non-régression et démonstration sur les requêtes statistiques paroissiales.
+#### Schéma d'Appel de l'Outil (Tool Signature)
+```json
+{
+  "name": "render_metric_cards",
+  "description": "Affiche un ensemble de cartes métriques pour des synthèses numériques clés.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "cards": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "label": {"type": "string", "description": "Titre du KPI"},
+            "value": {"type": "string", "description": "Valeur principale formatée"},
+            "description": {"type": "string", "description": "Sous-titre ou contexte"},
+            "status": {
+              "type": "string",
+              "enum": ["neutral", "success", "warning", "danger"]
+            }
+          },
+          "required": ["label", "value"]
+        }
+      }
+    },
+    "required": ["cards"]
+  }
+}
+```
 
 ---
 
-*Document de conception établi pour la validation et l'implémentation des View Tools Axora.*
+## ⚙️ 3. Mécanisme de Construction Dynamique Côté Backend
+
+Pour éviter tout couplage fort avec les entités dans le code Python :
+
+### 3.1 Service Générateur `DynamicViewBuilder`
+Un nouveau service `DynamicViewBuilder` reçoit les enregistrements bruts retournés par `QueryEngine` ainsi que la définition de l'entité (`EntityDefinition`) :
+
+```python
+class DynamicViewBuilder:
+    def __init__(self, semantic_service: SemanticModelService):
+        self._semantic = semantic_service
+
+    def build_table_payload(self, entity_name: str, records: list[dict[str, Any]], title: str | None = None) -> dict[str, Any]:
+        entity_def = self._semantic.get_entity_details(entity_name)
+        if not entity_def or not records:
+            return {"title": title or entity_name, "columns": [], "rows": records}
+
+        # Découverte dynamique des colonnes présentes dans les données
+        sample_keys = list(records[0].keys())
+        columns = []
+
+        for key in sample_keys:
+            if key in ("id", f"{entity_def.storage.table}_id"):
+                continue
+
+            attr_def = entity_def.attributes.get(key)
+            rel_def = entity_def.relationships.get(key)
+
+            # Déduction dynamique du type d'affichage
+            if attr_def and attr_def.allowed_values:
+                data_type = "badge"
+                label = attr_def.description or key.capitalize().replace("_", " ")
+            elif isinstance(records[0].get(key), list):
+                data_type = "tags"
+                label = key.capitalize().replace("_", " ")
+            elif attr_def and attr_def.type == "date":
+                data_type = "date"
+                label = attr_def.description or key.capitalize().replace("_", " ")
+            elif isinstance(records[0].get(key), (int, float)):
+                data_type = "number"
+                label = key.capitalize().replace("_", " ")
+            else:
+                data_type = "string"
+                label = (attr_def.description if attr_def else key).capitalize().replace("_", " ")
+
+            columns.append({
+                "key": key,
+                "label": label,
+                "data_type": data_type,
+                "sortable": True
+            })
+
+        return {
+            "title": title or f"Liste des {entity_name}s",
+            "entity": entity_name,
+            "columns": columns,
+            "rows": records,
+        }
+```
+
+---
+
+## 🖥️ 4. Rendu Front-End Next.js / React (`web/`)
+
+Dans le frontend Next.js :
+1. Le composant `ChatCanvas.tsx` reçoit la réponse de l'API.
+2. Si le payload contient un bloc `ui_view`:
+   - `view_type == "table"` -> Monte le composant `DynamicTableView`.
+   - `view_type == "chart"` -> Monte le composant `DynamicChartView`.
+   - `view_type == "metric_cards"` -> Monte `DynamicMetricCardsView`.
+3. Les composants React sont **100% génériques** :
+   - `DynamicTableView` génère les `<th>` en bouclant sur `columns` et les `<td>` en bouclant sur `rows[col.key]`.
+   - Les badges (`badge`) affichent une puce colorée basée sur la valeur textuelle sans connaître d'avance les libellés possibles.
+   - Les tags (`tags`) effectuent un simple `map` sur la liste des chaînes de caractères.
+   - `DynamicChartView` lit les champs universels `label` et `value` de `series`.
+
+---
+
+## 🚀 5. Bénéfices Immédiats
+
+1. **Flexibilité Absolue** : Vous pouvez modifier, ajouter ou supprimer des entités et attributs dans `gestion_paroissiale.yaml` ; l'interface s'adaptera instantanément sans aucune modification de code.
+2. **Support de Nouveaux Domaines** : Charger un modèle de gestion de stocks PPN ou de facturation produit immédiatement des tableaux et graphiques parfaits.
+3. **Expérience Utilisateur Moderne** : Finis les blocs de texte Markdown monotones ; l'utilisateur bénéficie d'une véritable interface applicative vivante et réactive.
+
+---
+
+*Spécification technique de conception validée pour le développement des View Tools Axora.*
