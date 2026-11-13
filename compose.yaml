@@ -61,6 +61,28 @@ services:
     depends_on:
       - db
 
+  mysql:
+    image: mysql:8.4
+    container_name: axora_mysql
+    profiles: ["mysql"]
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: axora
+      MYSQL_USER: axora
+      MYSQL_PASSWORD: axorapassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - axora-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 volumes:
   axora-postgres-data:
+  axora-mysql-data:
   
