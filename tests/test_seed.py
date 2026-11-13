@@ -18,7 +18,7 @@ async def seeded_db():
     session_factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     async with session_factory() as session:
-        seed_data = await seed_database(session)
+        seed_data = await seed_database(session, target_member_count=100)
 
     yield session_factory, seed_data
     await engine.dispose()
@@ -34,20 +34,21 @@ async def test_seed_database_record_count(seeded_db, semantic_service):
     session_factory, seed_data = seeded_db
     query_engine = QueryEngine(semantic_service)
 
-    assert len(seed_data["paroisses"]) == 2
-    assert len(seed_data["zones"]) == 4
-    assert len(seed_data["membres"]) == 4
-    assert len(seed_data["associations"]) == 8
+    assert len(seed_data["paroisses"]) >= 2
+    assert len(seed_data["zones"]) >= 4
+    assert len(seed_data["membres"]) >= 100
+    assert len(seed_data["associations"]) >= 8
+    assert len(seed_data["adhesions"]) >= 50
 
     async with session_factory() as session:
-        membres = await query_engine.execute_query(session, "Membre")
-        assert len(membres) == 4
+        membres = await query_engine.execute_query(session, "Membre", limit=200)
+        assert len(membres) >= 100
 
         paroisses = await query_engine.execute_query(session, "Paroisse")
-        assert len(paroisses) == 2
+        assert len(paroisses) >= 2
 
         assocs = await query_engine.execute_query(session, "Association")
-        assert len(assocs) == 8
+        assert len(assocs) >= 8
 
 
 @pytest.mark.asyncio
@@ -65,8 +66,9 @@ async def test_seed_database_relational_query(seeded_db, semantic_service):
                 {"path": "paroisse.nom", "operator": "equals", "value": "Andranovelona"},
                 {"path": "zone.nom", "operator": "equals", "value": "Andoharanofotsy"},
             ],
+            limit=200,
         )
-        assert len(results) == 2
+        assert len(results) >= 2
         names = [r["nom"] for r in results]
         assert "Rakoto" in names
         assert "Rasoa" in names
