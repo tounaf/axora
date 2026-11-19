@@ -68,7 +68,7 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
 
         # Primary Key Column (GUID)
         pk_name = entity_def.storage.id
-        columns.append(Column(pk_name, GUID, primary_key=True))
+        columns.append(Column(pk_name, GUID, primary_key=True, quote=True))
         added_cols.add(pk_name)
 
         # Dynamic Attributes
@@ -78,13 +78,13 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
                 continue
 
             if attr_def.type == "date":
-                columns.append(Column(col_name, Date, nullable=True))
+                columns.append(Column(col_name, Date, nullable=True, quote=True))
             elif attr_def.type == "string" and col_name.endswith("_id"):
-                columns.append(Column(col_name, GUID, nullable=True))
+                columns.append(Column(col_name, GUID, nullable=True, quote=True))
             elif attr_def.type == "string":
-                columns.append(Column(col_name, String(200), nullable=True))
+                columns.append(Column(col_name, String(200), nullable=True, quote=True))
             else:
-                columns.append(Column(col_name, Text, nullable=True))
+                columns.append(Column(col_name, Text, nullable=True, quote=True))
 
             added_cols.add(col_name)
 
@@ -97,10 +97,10 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
                     fk_col_2 = f"{rel_name}_id"
                     for fk in (fk_col_1, fk_col_2):
                         if fk not in added_cols:
-                            columns.append(Column(fk, GUID, nullable=True))
+                            columns.append(Column(fk, GUID, nullable=True, quote=True))
                             added_cols.add(fk)
 
-        table_obj = Table(table_name, metadata, *columns, extend_existing=True)
+        table_obj = Table(table_name, metadata, *columns, quote=True, extend_existing=True)
         DYNAMIC_TABLES[table_name] = table_obj
 
     return DYNAMIC_TABLES

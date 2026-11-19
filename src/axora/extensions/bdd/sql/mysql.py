@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 from axora.extensions.bdd.sql.base import SQLBaseConnector
-from axora.semantic.service import SemanticModelService
+
+if TYPE_CHECKING:
+    from axora.semantic.service import SemanticModelService
+else:
+    SemanticModelService = Any
 
 logger = logging.getLogger("axora.extensions.bdd.sql.mysql")
 

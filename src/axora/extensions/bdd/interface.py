@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Any
-from axora.semantic.models import EntityDefinition
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from axora.semantic.models import EntityDefinition
+else:
+    EntityDefinition = Any
 
 
 class DatabaseConnectorInterface(ABC):

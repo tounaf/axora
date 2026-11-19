@@ -1,12 +1,15 @@
-from typing import Any
-from axora.config import settings
+from typing import TYPE_CHECKING, Any
 from axora.extensions.bdd.interface import DatabaseConnectorInterface
 from axora.extensions.bdd.registry import ConnectorRegistry
 from axora.extensions.bdd.sql.base import SQLBaseConnector
 from axora.extensions.bdd.sql.mysql import MySQLConnector
 from axora.extensions.bdd.sql.postgres import PostgresConnector
 from axora.extensions.bdd.sql.sqlite import SqliteConnector
-from axora.semantic.service import SemanticModelService
+
+if TYPE_CHECKING:
+    from axora.semantic.service import SemanticModelService
+else:
+    SemanticModelService = Any
 
 # Global connector registry instance
 connector_registry = ConnectorRegistry()
@@ -30,7 +33,14 @@ def get_connector(
     **kwargs: Any,
 ) -> DatabaseConnectorInterface:
     """Factory helper returning a configured database connector based on connection URL."""
-    target_url = url or settings.DATABASE_URL
+    if url is None:
+        try:
+            from axora.config import settings
+            target_url = settings.DATABASE_URL
+        except Exception:
+            target_url = "sqlite+aiosqlite:///:memory:"
+    else:
+        target_url = url
     return connector_registry.create(url=target_url, semantic_service=semantic_service, **kwargs)
 
 

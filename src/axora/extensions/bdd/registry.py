@@ -1,7 +1,11 @@
 import logging
-from typing import Any, Type
+from typing import TYPE_CHECKING, Any, Type
 from axora.extensions.bdd.interface import DatabaseConnectorInterface
-from axora.semantic.service import SemanticModelService
+
+if TYPE_CHECKING:
+    from axora.semantic.service import SemanticModelService
+else:
+    SemanticModelService = Any
 
 logger = logging.getLogger("axora.extensions.bdd.registry")
 

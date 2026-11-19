@@ -1,0 +1,710 @@
+model:
+  name: fvavitao_identity
+  version: '1.0'
+  description: Modèle sémantique généré automatiquement à partir de la base fvavitao_identity.
+  entities:
+    Association:
+      description: Association ou groupe d'activité paroissial (ex. Hommes, Femmes,
+        Jeunes).
+      storage:
+        table: association
+        id: id
+      attributes:
+        fiangonana_id:
+          column: fiangonana_id
+          type: number
+          description: Attribut fiangonana_id de Association
+        nom:
+          column: nom
+          type: string
+          description: Attribut nom de Association
+        description:
+          column: description
+          type: text
+          description: Attribut description de Association
+      synonyms:
+      - sampana
+      - groupe_activite
+      - organisation
+      relationships:
+        fiangonana:
+          target: Fiangonana
+          cardinality: many-to-one
+        cotisations:
+          target: Cotisation
+          cardinality: one-to-many
+        dons:
+          target: Don
+          cardinality: one-to-many
+        evenements:
+          target: Evenement
+          cardinality: one-to-many
+        role_assignments:
+          target: RoleAssignment
+          cardinality: one-to-many
+        sous_groupes:
+          target: SousGroupe
+          cardinality: one-to-many
+        membres:
+          target: Membre
+          cardinality: many-to-many
+          through: membre_association
+    Cotisation:
+      description: Cotisation ou droit d'adhésion versé par un membre.
+      storage:
+        table: cotisation
+        id: id
+      attributes:
+        membre_id:
+          column: membre_id
+          type: number
+          description: Attribut membre_id de Cotisation
+        fiangonana_id:
+          column: fiangonana_id
+          type: number
+          description: Attribut fiangonana_id de Cotisation
+        association_id:
+          column: association_id
+          type: number
+          description: Attribut association_id de Cotisation
+        groupe_id:
+          column: groupe_id
+          type: number
+          description: Attribut groupe_id de Cotisation
+        enregistre_par_id:
+          column: enregistre_par_id
+          type: number
+          description: Attribut enregistre_par_id de Cotisation
+        annee:
+          column: annee
+          type: number
+          description: Attribut annee de Cotisation
+        mois:
+          column: mois
+          type: number
+          description: Attribut mois de Cotisation
+        tranche:
+          column: tranche
+          type: number
+          description: Attribut tranche de Cotisation
+        montant:
+          column: montant
+          type: number
+          description: Attribut montant de Cotisation
+        paid_at:
+          column: paid_at
+          type: date
+          description: Attribut paid_at de Cotisation
+      synonyms:
+      - adhesion
+      - paiement
+      - contribution
+      relationships:
+        fiangonana:
+          target: Fiangonana
+          cardinality: many-to-one
+        membre:
+          target: Membre
+          cardinality: many-to-one
+        groupe:
+          target: Groupe
+          cardinality: many-to-one
+        enregistre_par:
+          target: Membre
+          cardinality: many-to-one
+        association:
+          target: Association
+          cardinality: many-to-one
+    Don:
+      description: Don financier ou matériel offert à la communauté.
+      storage:
+        table: don
+        id: id
+      attributes:
+        membre_id:
+          column: membre_id
+          type: number
+          description: Attribut membre_id de Don
+        fiangonana_id:
+          column: fiangonana_id
+          type: number
+          description: Attribut fiangonana_id de Don
+        association_id:
+          column: association_id
+          type: number
+          description: Attribut association_id de Don
+        groupe_id:
+          column: groupe_id
+          type: number
+          description: Attribut groupe_id de Don
+        enregistre_par_id:
+          column: enregistre_par_id
+          type: number
+          description: Attribut enregistre_par_id de Don
+        montant:
+          column: montant
+          type: number
+          description: Attribut montant de Don
+        libelle:
+          column: libelle
+          type: string
+          description: Attribut libelle de Don
+        paid_at:
+          column: paid_at
+          type: date
+          description: Attribut paid_at de Don
+      synonyms:
+      - offrande
+      - dime
+      - donation
+      - aide
+      relationships:
+        fiangonana:
+          target: Fiangonana
+          cardinality: many-to-one
+        membre:
+          target: Membre
+          cardinality: many-to-one
+        groupe:
+          target: Groupe
+          cardinality: many-to-one
+        enregistre_par:
+          target: Membre
+          cardinality: many-to-one
+        association:
+          target: Association
+          cardinality: many-to-one
+    Evenement:
+      description: Culte, assemblée ou événement organisé par la communauté.
+      storage:
+        table: evenement
+        id: id
+      attributes:
+        type_evenement_id:
+          column: type_evenement_id
+          type: number
+          description: Attribut type_evenement_id de Evenement
+        fiangonana_id:
+          column: fiangonana_id
+          type: number
+          description: Attribut fiangonana_id de Evenement
+        groupe_id:
+          column: groupe_id
+          type: number
+          description: Attribut groupe_id de Evenement
+        association_id:
+          column: association_id
+          type: number
+          description: Attribut association_id de Evenement
+        nom:
+          column: nom
+          type: string
+          description: Attribut nom de Evenement
+        description:
+          column: description
+          type: text
+          description: Attribut description de Evenement
+        compte_rendu:
+          column: compte_rendu
+          type: text
+          description: Attribut compte_rendu de Evenement
+        date_debut:
+          column: date_debut
+          type: date
+          description: Attribut date_debut de Evenement
+        date_fin:
+          column: date_fin
+          type: date
+          description: Attribut date_fin de Evenement
+        lieu:
+          column: lieu
+          type: string
+          description: Attribut lieu de Evenement
+        created_at:
+          column: created_at
+          type: date
+          description: Attribut created_at de Evenement
+      synonyms:
+      - culte
+      - reunion
+      - programme
+      - activite
+      relationships:
+        fiangonana:
+          target: Fiangonana
+          cardinality: many-to-one
+        groupe:
+          target: Groupe
+          cardinality: many-to-one
+        type_evenement:
+          target: TypeEvenement
+          cardinality: many-to-one
+        association:
+          target: Association
+          cardinality: many-to-one
+        medias:
+          target: Media
+          cardinality: one-to-many
+        notes:
+          target: Note
+          cardinality: many-to-many
+          through: evenement_note
+    Feature:
+      description: Fonctionnalité ou module applicatif soumis à habilitation.
+      storage:
+        table: feature
+        id: id
+      attributes:
+        code:
+          column: code
+          type: string
+          description: Attribut code de Feature
+        label:
+          column: label
+          type: string
+          description: Attribut label de Feature
+        category:
+          column: category
+          type: string
+          description: Attribut category de Feature
+        description:
+          column: description
+          type: text
+          description: Attribut description de Feature
+        target_route:
+          column: target_route
+          type: string
+          description: Attribut target_route de Feature
+        icon:
+          column: icon
+          type: string
+          description: Attribut icon de Feature
+        sort_order:
+          column: sort_order
+          type: number
+          description: Attribut sort_order de Feature
+      synonyms:
+      - feature
+      relationships:
+        roles:
+          target: Role
+          cardinality: many-to-many
+          through: permission
+    Fiangonana:
+      description: Paroisse ou communauté ecclésiale locale.
+      storage:
+        table: fiangonana
+        id: id
+      attributes:
+        nom:
+          column: nom
+          type: string
+          description: Attribut nom de Fiangonana
+        code:
+          column: code
+          type: string
+          description: Attribut code de Fiangonana
+      synonyms:
+      - paroisse
+      - eglise
+      - communaute
+      relationships:
+        associations:
+          target: Association
+          cardinality: one-to-many
+        cotisations:
+          target: Cotisation
+          cardinality: one-to-many
+        dons:
+          target: Don
+          cardinality: one-to-many
+        evenements:
+          target: Evenement
+          cardinality: one-to-many
+        groupes:
+          target: Groupe
+          cardinality: one-to-many
+        membres:
+          target: Membre
+          cardinality: one-to-many
+        role_assignments:
+          target: RoleAssignment
+          cardinality: one-to-many
+    Groupe:
+      description: Zone géographique ou groupe de quartier rattaché à une paroisse.
+      storage:
+        table: groupe
+        id: id
+      attributes:
+        fiangonana_id:
+          column: fiangonana_id
+          type: number
+          description: Attribut fiangonana_id de Groupe
+        nom:
+          column: nom
+          type: string
+          description: Attribut nom de Groupe
+        description:
+          column: description
+          type: text
+          description: Attribut description de Groupe
+      synonyms:
+      - zone
+      - zone_geographique
+      - secteur
+      - quartier
+      relationships:
+        fiangonana:
+          target: Fiangonana
+          cardinality: many-to-one
+        cotisations:
+          target: Cotisation
+          cardinality: one-to-many
+        dons:
+          target: Don
+          cardinality: one-to-many
+        evenements:
+          target: Evenement
+          cardinality: one-to-many
+        membres:
+          target: Membre
+          cardinality: one-to-many
+        role_assignments:
+          target: RoleAssignment
+          cardinality: one-to-many
+    Media:
+      description: Ressource multimédia (photo, document) liée à un événement.
+      storage:
+        table: media
+        id: id
+      attributes:
+        evenement_id:
+          column: evenement_id
+          type: number
+          description: Attribut evenement_id de Media
+        url:
+          column: url
+          type: string
+          description: Attribut url de Media
+        type:
+          column: type
+          type: string
+          description: Attribut type de Media
+        created_at:
+          column: created_at
+          type: date
+          description: Attribut created_at de Media
+      synonyms:
+      - fichier
+      - photo
+      - document
+      - piece_jointe
+      relationships:
+        evenement:
+          target: Evenement
+          cardinality: many-to-one
+    Membre:
+      description: Personne ou fidèle membre de la communauté paroissiale.
+      storage:
+        table: membre
+        id: id
+      attributes:
+        zone_geographique_id:
+          column: zone_geographique_id
+          type: number
+          description: Attribut zone_geographique_id de Membre
+        fiangonana_id:
+          column: fiangonana_id
+          type: number
+          description: Attribut fiangonana_id de Membre
+        nom:
+          column: nom
+          type: string
+          description: Attribut nom de Membre
+        prenom:
+          column: prenom
+          type: string
+          description: Attribut prenom de Membre
+        email:
+          column: email
+          type: string
+          description: Attribut email de Membre
+        telephone:
+          column: telephone
+          type: string
+          description: Attribut telephone de Membre
+        adresse:
+          column: adresse
+          type: string
+          description: Attribut adresse de Membre
+        date_naissance:
+          column: date_naissance
+          type: date
+          description: Attribut date_naissance de Membre
+        photo_url:
+          column: photo_url
+          type: string
+          description: Attribut photo_url de Membre
+        password:
+          column: password
+          type: string
+          description: Attribut password de Membre
+        roles:
+          column: roles
+          type: text
+          description: Attribut roles de Membre
+        qr_code_token:
+          column: qr_code_token
+          type: string
+          description: Attribut qr_code_token de Membre
+        sexe:
+          column: sexe
+          type: string
+          description: Attribut sexe de Membre
+          allowed_values:
+          - HOMME
+          - FEMME
+      synonyms:
+      - adherent
+      - fidele
+      - personne
+      - chretien
+      relationships:
+        zone_geographique:
+          target: Groupe
+          cardinality: many-to-one
+        fiangonana:
+          target: Fiangonana
+          cardinality: many-to-one
+        cotisations:
+          target: Cotisation
+          cardinality: one-to-many
+        cotisations_via_enregistre_par:
+          target: Cotisation
+          cardinality: one-to-many
+        dons:
+          target: Don
+          cardinality: one-to-many
+        dons_via_enregistre_par:
+          target: Don
+          cardinality: one-to-many
+        presences:
+          target: Presence
+          cardinality: one-to-many
+        presences_via_scanned_by:
+          target: Presence
+          cardinality: one-to-many
+        role_assignments:
+          target: RoleAssignment
+          cardinality: one-to-many
+        associations:
+          target: Association
+          cardinality: many-to-many
+          through: membre_association
+    Note:
+      description: Note textuelle ou compte-rendu associé à un événement.
+      storage:
+        table: note
+        id: id
+      attributes:
+        contenu:
+          column: contenu
+          type: text
+          description: Attribut contenu de Note
+        created_at:
+          column: created_at
+          type: date
+          description: Attribut created_at de Note
+      synonyms:
+      - remarque
+      - compte_rendu
+      - observation
+      relationships:
+        evenements:
+          target: Evenement
+          cardinality: many-to-many
+          through: evenement_note
+    Presence:
+      description: Enregistrement de présence ou émargement à une activité.
+      storage:
+        table: presence
+        id: id
+      attributes:
+        membre_id:
+          column: membre_id
+          type: number
+          description: Attribut membre_id de Presence
+        scanned_by_id:
+          column: scanned_by_id
+          type: number
+          description: Attribut scanned_by_id de Presence
+        activity_name:
+          column: activity_name
+          type: string
+          description: Attribut activity_name de Presence
+        scanned_at:
+          column: scanned_at
+          type: date
+          description: Attribut scanned_at de Presence
+      synonyms:
+      - pointage
+      - assiduite
+      - participation
+      relationships:
+        membre:
+          target: Membre
+          cardinality: many-to-one
+        scanned_by:
+          target: Membre
+          cardinality: many-to-one
+    Role:
+      description: Rôle de sécurité ou mandat organisationnel au sein de la paroisse.
+      storage:
+        table: role
+        id: id
+      attributes:
+        name:
+          column: name
+          type: string
+          description: Attribut name de Role
+        description:
+          column: description
+          type: text
+          description: Attribut description de Role
+      synonyms:
+      - fonction
+      - titre
+      - responsabilite
+      relationships:
+        role_assignments:
+          target: RoleAssignment
+          cardinality: one-to-many
+        features:
+          target: Feature
+          cardinality: many-to-many
+          through: permission
+    RoleAssignment:
+      description: Attribution d'un rôle à un membre dans un contexte spécifique.
+      storage:
+        table: role_assignment
+        id: id
+      attributes:
+        membre_id:
+          column: membre_id
+          type: number
+          description: Attribut membre_id de RoleAssignment
+        role_id:
+          column: role_id
+          type: number
+          description: Attribut role_id de RoleAssignment
+        fiangonana_context_id:
+          column: fiangonana_context_id
+          type: number
+          description: Attribut fiangonana_context_id de RoleAssignment
+        groupe_context_id:
+          column: groupe_context_id
+          type: number
+          description: Attribut groupe_context_id de RoleAssignment
+        association_context_id:
+          column: association_context_id
+          type: number
+          description: Attribut association_context_id de RoleAssignment
+        sous_groupe_context_id:
+          column: sous_groupe_context_id
+          type: number
+          description: Attribut sous_groupe_context_id de RoleAssignment
+        start_date:
+          column: start_date
+          type: date
+          description: Attribut start_date de RoleAssignment
+        end_date:
+          column: end_date
+          type: date
+          description: Attribut end_date de RoleAssignment
+        exercice_year:
+          column: exercice_year
+          type: string
+          description: Attribut exercice_year de RoleAssignment
+        is_active:
+          column: is_active
+          type: boolean
+          description: Attribut is_active de RoleAssignment
+      synonyms:
+      - role_assignment
+      relationships:
+        sous_groupe_context:
+          target: SousGroupe
+          cardinality: many-to-one
+        fiangonana_context:
+          target: Fiangonana
+          cardinality: many-to-one
+        association_context:
+          target: Association
+          cardinality: many-to-one
+        membre:
+          target: Membre
+          cardinality: many-to-one
+        groupe_context:
+          target: Groupe
+          cardinality: many-to-one
+        role:
+          target: Role
+          cardinality: many-to-one
+    SousGroupe:
+      description: Sous-groupe spécialisé opérant au sein d'une association.
+      storage:
+        table: sous_groupe
+        id: id
+      attributes:
+        association_id:
+          column: association_id
+          type: number
+          description: Attribut association_id de SousGroupe
+        nom:
+          column: nom
+          type: string
+          description: Attribut nom de SousGroupe
+        description:
+          column: description
+          type: text
+          description: Attribut description de SousGroupe
+      synonyms:
+      - branche
+      - sous_section
+      - comite
+      relationships:
+        association:
+          target: Association
+          cardinality: many-to-one
+        role_assignments:
+          target: RoleAssignment
+          cardinality: one-to-many
+    TypeEvenement:
+      description: 'Type ou catégorie d''événement (ex: Culte dominical, Conférence).'
+      storage:
+        table: type_evenement
+        id: id
+      attributes:
+        nom:
+          column: nom
+          type: string
+          description: Attribut nom de TypeEvenement
+        code:
+          column: code
+          type: string
+          description: Attribut code de TypeEvenement
+        description:
+          column: description
+          type: text
+          description: Attribut description de TypeEvenement
+      synonyms:
+      - categorie_evenement
+      - nature_evenement
+      relationships:
+        evenements:
+          target: Evenement
+          cardinality: one-to-many
+  business_rules:
+  - id: BR-AUTO-001
+    description: L'intégrité référentielle des clés étrangères doit être respectée
+      lors de toute création ou mise à jour.

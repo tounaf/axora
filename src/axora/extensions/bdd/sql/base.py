@@ -1,15 +1,26 @@
+from __future__ import annotations
+
 import logging
 import time
 from contextlib import asynccontextmanager
-from typing import Any, AsyncGenerator
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from axora.data.dynamic_models import build_dynamic_tables
-from axora.data.mutation_engine import MutationEngine
-from axora.data.query_engine import QueryEngine
+from typing import TYPE_CHECKING, Any, AsyncGenerator
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+    from axora.data.mutation_engine import MutationEngine
+    from axora.data.query_engine import QueryEngine
+    from axora.semantic.models import EntityDefinition
+    from axora.semantic.service import SemanticModelService
+else:
+    AsyncEngine = Any
+    AsyncSession = Any
+    async_sessionmaker = Any
+    MutationEngine = Any
+    QueryEngine = Any
+    EntityDefinition = Any
+    SemanticModelService = Any
+
 from axora.extensions.bdd.interface import DatabaseConnectorInterface
-from axora.semantic.models import EntityDefinition
-from axora.semantic.service import SemanticModelService
 
 logger = logging.getLogger("axora.extensions.bdd.sql.base")
 
@@ -58,6 +69,8 @@ class SQLBaseConnector(DatabaseConnectorInterface):
         if self._engine is not None:
             return
 
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
         normalized_url = self._normalize_url(self.raw_url)
         logger.info(f"[{self.dialect_name.upper()} CONNECTOR] Initializing async engine for: {self._safe_log_url(normalized_url)}")
 
@@ -75,6 +88,10 @@ class SQLBaseConnector(DatabaseConnectorInterface):
         )
 
         if self.semantic_service:
+            from axora.data.dynamic_models import build_dynamic_tables
+            from axora.data.mutation_engine import MutationEngine
+            from axora.data.query_engine import QueryEngine
+
             build_dynamic_tables(self.semantic_service)
             self._query_engine = QueryEngine(self.semantic_service)
             self._mutation_engine = MutationEngine(self.semantic_service)
@@ -91,6 +108,8 @@ class SQLBaseConnector(DatabaseConnectorInterface):
         """Runs a lightweight ping query (SELECT 1) and measures response latency."""
         start_time = time.perf_counter()
         try:
+            from sqlalchemy import text
+
             if self._engine is None:
                 await self.connect()
 
@@ -145,6 +164,8 @@ class SQLBaseConnector(DatabaseConnectorInterface):
         if not self._query_engine:
             if not self.semantic_service:
                 raise ValueError("Cannot execute semantic query: no SemanticModelService provided.")
+            from axora.data.query_engine import QueryEngine
+
             self._query_engine = QueryEngine(self.semantic_service)
 
         async with self.session_scope() as session:
@@ -167,6 +188,8 @@ class SQLBaseConnector(DatabaseConnectorInterface):
         if not self._mutation_engine:
             if not self.semantic_service:
                 raise ValueError("Cannot execute semantic mutation: no SemanticModelService provided.")
+            from axora.data.mutation_engine import MutationEngine
+
             self._mutation_engine = MutationEngine(self.semantic_service)
 
         async with self.session_scope() as session:

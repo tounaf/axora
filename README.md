@@ -33,9 +33,17 @@ Copier le fichier d'exemple `.env.example` vers `.env` :
 cp .env.example .env
 ```
 
-Ajuster si nécessaire les variables dans `.env` :
-- `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`
-- `LLM_API_KEY` / `LLM_MODEL` (pour les appels au fournisseur LLM)
+Définir `POSTGRES_PASSWORD` avec un secret aléatoire URL-safe avant le démarrage. Exemple :
+
+```bash
+openssl rand -hex 32
+```
+
+Copier la valeur produite dans `POSTGRES_PASSWORD` dans `.env`. Ne pas réutiliser cette valeur dans un dépôt ou un ticket.
+
+Autres paramètres :
+- Le profil par défaut utilise `LLM_PROVIDER=mock` et ne nécessite aucune clé. Pour activer un fournisseur distant, configurer uniquement sa clé dans `.env`.
+- Les profils optionnels `admin` (pgAdmin) et `mysql` exigent leurs propres identifiants ; ils ne sont pas démarrés par défaut.
 
 ### 3. Démarrer l'application avec Docker Compose
 
@@ -49,10 +57,25 @@ Cette commande démarre deux services :
 - `db` : Base de données PostgreSQL 17
 - `api` : Application FastAPI / Runtime Agent Axora sur le port `8000`
 
+Le démarrage échoue explicitement si `POSTGRES_PASSWORD` n'est pas défini. Le mot de passe est généré localement et n'est pas fourni par le dépôt.
+
 ### 4. Vérifier l'état des services
 
-- **Healthcheck API :** [http://localhost:8000/health](http://localhost:8000/health)
+- **Liveness API :** [http://localhost:8000/health](http://localhost:8000/health)
+- **Readiness API + PostgreSQL :** [http://localhost:8000/health/ready](http://localhost:8000/health/ready)
 - **Documentation API Swagger :** [http://localhost:8000/docs](http://localhost:8000/docs)
+
+Le profil pgAdmin n'est pas exposé par défaut. Après avoir renseigné `PGADMIN_DEFAULT_EMAIL` et `PGADMIN_DEFAULT_PASSWORD` dans `.env`, le démarrer explicitement :
+
+```bash
+docker compose --profile admin up -d pgadmin
+```
+
+Le profil MySQL est réservé aux environnements qui ont renseigné `MYSQL_ROOT_PASSWORD` et `MYSQL_PASSWORD` :
+
+```bash
+docker compose --profile mysql up -d mysql
+```
 
 ---
 
@@ -103,6 +126,8 @@ axora/
 - [Architecture des Connecteurs BDD Pluggables v3.0](axora_3.0-Architecture_Connecteurs_BDD_Pluggables_Extensions.md)
 - [Jalon 1 : Conception & Implémentation Connecteurs Core (Postgres & SQLite) v3.1](axora_3.1-Jalon_1_Conception_et_Implementation_Connecteurs_BDD_Core_Postgres_SQLite.md)
 - [Jalon 2 : Conception & Implémentation Connecteur MySQL & MariaDB v3.2](axora_3.2-Jalon_2_Conception_et_Implementation_Connecteur_MySQL_MariaDB.md)
+- [Jalon 6 : Auto-Introspection & Reverse-Engineering v3.6](axora_3.6-Jalon_6_Auto-Introspection_Reverse-Engineering.md)
+- [Jalon 7 : Installation Autonome et Préparation de l'Environnement v3.7](axora_3.7-Jalon_7_Installation_Autonome_Axora.md)
 
 ---
 

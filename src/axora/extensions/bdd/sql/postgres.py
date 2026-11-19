@@ -1,6 +1,12 @@
-from typing import Any
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 from axora.extensions.bdd.sql.base import SQLBaseConnector
-from axora.semantic.service import SemanticModelService
+
+if TYPE_CHECKING:
+    from axora.semantic.service import SemanticModelService
+else:
+    SemanticModelService = Any
 
 
 class PostgresConnector(SQLBaseConnector):

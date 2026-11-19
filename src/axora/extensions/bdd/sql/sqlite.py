@@ -1,7 +1,12 @@
-from typing import Any
-from sqlalchemy.pool import StaticPool
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 from axora.extensions.bdd.sql.base import SQLBaseConnector
-from axora.semantic.service import SemanticModelService
+
+if TYPE_CHECKING:
+    from axora.semantic.service import SemanticModelService
+else:
+    SemanticModelService = Any
 
 
 class SqliteConnector(SQLBaseConnector):
@@ -16,6 +21,7 @@ class SqliteConnector(SQLBaseConnector):
     ) -> None:
         normalized = self._normalize_url(url)
         if ":memory:" in normalized or normalized.endswith(":memory:"):
+            from sqlalchemy.pool import StaticPool
             engine_kwargs.setdefault("connect_args", {"check_same_thread": False})
             engine_kwargs.setdefault("poolclass", StaticPool)
 
