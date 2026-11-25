@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # Database Settings
     DATABASE_URL: str = "postgresql+psycopg://postgres:postgres@db:5432/axora"
 
+    SEMANTIC_MODEL_PATH: str = "src/axora/semantic/definitions/gestion_paroissiale.yaml"
+
     # LLM Settings
     LLM_PROVIDER: str = "mock"  # Options: groq, nvidia, gemini, openai, anthropic, ollama, mock
     LLM_API_KEY: str = ""

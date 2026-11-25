@@ -87,13 +87,40 @@ Les tests automatiques s'exécutent directement dans le container de l'applicati
 docker compose exec api pytest
 ```
 
+## Importer un dump SQL dans MySQL (prototype)
+
+Le parcours prototype `install-mysql` suppose que Docker, son daemon et le plugin Compose sont déjà installés et accessibles. Il réutilise le service `mysql` existant de `compose.yaml`, construit et démarre l'API depuis le `Dockerfile` du dépôt avec le manifeste généré, importe le dump SQL fourni, puis génère le manifeste sémantique à partir du schéma détecté.
+
+Commencer par valider le plan sans créer de ressources :
+
+```bash
+PYTHONPATH=src python -m axora.cli install-mysql \
+  --sql-file /chemin/vers/mon_dump.sql \
+  --output ./manifest_test.yaml \
+  --plan
+```
+
+Après vérification, lancer le parcours interactif :
+
+```bash
+PYTHONPATH=src python -m axora.cli install-mysql \
+  --sql-file /chemin/vers/mon_dump.sql \
+  --output ./manifest_test.yaml
+```
+
+L'installation demande confirmation avant de démarrer Compose et d'exécuter le SQL. Les ports publiés par défaut sont `127.0.0.1:3307` pour MySQL et `127.0.0.1:8001` pour l'API ; si l'un est déjà utilisé, choisissez un autre avec `--port` ou `--api-port`. Le healthcheck MySQL vérifie le serveur final sur TCP, et non le socket temporaire utilisé pendant l'initialisation. Axora réutilise le projet Compose `axora` et son volume persistant `axora_axora-mysql-data` lors des lancements suivants ; le même dump n'est pas réimporté. Une base déjà présente mais non enregistrée par Axora n'est jamais écrasée. Le manifeste est créé sous `src/axora/semantic/definitions/` par défaut, et l'état/les secrets de connexion sont enregistrés dans `~/.config/axora/installations/` avec des permissions privées. Ne partagez pas ces fichiers.
+
+Un dump qui contient `USE` ou `CREATE DATABASE` doit cibler une seule base ; son nom est détecté automatiquement, ou doit correspondre à `--database`. `--database`, `--name`, `--output`, `--port` et `--api-port` permettent de personnaliser ces valeurs. Si le manifeste existe déjà, choisissez un autre `--output` ou confirmez son remplacement avec `--overwrite`. `--yes` supprime la confirmation interactive et ne doit être utilisé que si le plan est accepté.
+
+Cette première tranche n'installe pas Docker ni ne configure de fournisseur LLM. Sans clé LLM fournie par l'utilisateur, l'application reste en mode démo. L'import exécute le fichier SQL comme `root` dans le service MySQL du Compose Axora : n'utilisez que des dumps de confiance. Les conteneurs et volumes ne sont jamais supprimés automatiquement.
+
 ---
 
 ## 📁 Architecture et Structure du Projet
 
 ```text
 axora/
-├── compose.yaml                # Configuration Docker Compose (API + PostgreSQL)
+├── compose.yaml                # Déploiement courant Docker Compose (API + PostgreSQL)
 ├── Dockerfile                  # Image Docker pour l'application Python
 ├── .env.example                # Modèle des variables d'environnement
 ├── requirements.txt            # Dépendances Python du projet

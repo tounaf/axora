@@ -1,5 +1,5 @@
 from typing import Any
-from sqlalchemy import Column, Date, MetaData, String, Table, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Integer, MetaData, Numeric, String, Table, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.types import TypeDecorator, CHAR
 import uuid
@@ -66,9 +66,10 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
         added_cols = set()
         columns = []
 
-        # Primary Key Column (GUID)
+        # Primary key type comes from the semantic manifest.
         pk_name = entity_def.storage.id
-        columns.append(Column(pk_name, GUID, primary_key=True, quote=True))
+        pk_type = _column_type(entity_def.storage.id_type)
+        columns.append(Column(pk_name, pk_type, primary_key=True, quote=True))
         added_cols.add(pk_name)
 
         # Dynamic Attributes
@@ -77,14 +78,9 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
             if col_name in added_cols:
                 continue
 
-            if attr_def.type == "date":
-                columns.append(Column(col_name, Date, nullable=True, quote=True))
-            elif attr_def.type == "string" and col_name.endswith("_id"):
-                columns.append(Column(col_name, GUID, nullable=True, quote=True))
-            elif attr_def.type == "string":
-                columns.append(Column(col_name, String(200), nullable=True, quote=True))
-            else:
-                columns.append(Column(col_name, Text, nullable=True, quote=True))
+            columns.append(
+                Column(col_name, _column_type(attr_def.type), nullable=True, quote=True)
+            )
 
             added_cols.add(col_name)
 
@@ -95,15 +91,34 @@ def build_dynamic_tables(semantic_service: SemanticModelService) -> dict[str, Ta
                 if target_entity_def:
                     fk_col_1 = f"{target_entity_def.storage.table}_id"
                     fk_col_2 = f"{rel_name}_id"
+                    fk_type = _column_type(target_entity_def.storage.id_type)
                     for fk in (fk_col_1, fk_col_2):
                         if fk not in added_cols:
-                            columns.append(Column(fk, GUID, nullable=True, quote=True))
+                            columns.append(Column(fk, fk_type, nullable=True, quote=True))
                             added_cols.add(fk)
 
         table_obj = Table(table_name, metadata, *columns, quote=True, extend_existing=True)
         DYNAMIC_TABLES[table_name] = table_obj
 
     return DYNAMIC_TABLES
+
+
+def _column_type(semantic_type: str):
+    if semantic_type in ("uuid", "guid"):
+        return GUID
+    if semantic_type == "integer":
+        return Integer
+    if semantic_type in ("number", "numeric"):
+        return Numeric
+    if semantic_type == "boolean":
+        return Boolean
+    if semantic_type == "date":
+        return Date
+    if semantic_type in ("datetime", "timestamp"):
+        return DateTime
+    if semantic_type == "text":
+        return Text
+    return String(255)
 
 
 def get_dynamic_table(table_name: str, semantic_service: SemanticModelService) -> Table:

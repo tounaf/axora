@@ -18,6 +18,7 @@ class RelationshipDefinition(BaseModel):
 class StorageDefinition(BaseModel):
     table: str
     id: str = "id"
+    id_type: Literal["uuid", "integer", "number", "string"] = "uuid"
 
 
 class EntityDefinition(BaseModel):

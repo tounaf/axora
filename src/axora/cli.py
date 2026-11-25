@@ -49,6 +49,89 @@ def run_introspect(args: argparse.Namespace) -> None:
     print("=" * 60)
 
 
+def run_mysql_install(args: argparse.Namespace) -> None:
+    from axora.setup.mysql_install import (
+        MysqlInstallError,
+        build_mysql_install_plan,
+        check_compose,
+        check_docker,
+        install_mysql_from_dump,
+    )
+
+    try:
+        if not 1024 <= args.port <= 65535 or not 1024 <= args.api_port <= 65535:
+            raise MysqlInstallError("Les ports locaux doivent être compris entre 1024 et 65535.")
+        if args.port == args.api_port:
+            raise MysqlInstallError("Les ports MySQL et API doivent être différents.")
+        if args.startup_timeout <= 0 or args.import_timeout <= 0:
+            raise MysqlInstallError("Les délais d'attente doivent être positifs.")
+        plan = build_mysql_install_plan(
+            sql_file=args.sql_file,
+            database_name=args.database,
+            model_name=args.name,
+            manifest_path=args.output,
+            overwrite=args.overwrite,
+        )
+        print("Plan d'installation Axora — MySQL")
+        print(f"- Fichier SQL : {plan.sql_file}")
+        print(f"- Tables détectées : {plan.table_count}")
+        print(f"- Base cible neuve : {plan.database_name}")
+        print(f"- Manifeste : {plan.manifest_path}")
+        print(f"- Image Docker : mysql:8.4")
+        print("- Fichier Compose : compose.yaml (service mysql et API Axora)")
+        print("- Image API : construite depuis le Dockerfile du dépôt.")
+        print("- Les services MySQL et API sont gérés par le projet Compose Axora.")
+        print("- Aucun conteneur ou volume existant ne sera supprimé.")
+
+        docker_version = check_docker()
+        compose_version = check_compose()
+        print(f"Docker {docker_version} et Compose {compose_version} accessibles.")
+        if args.plan:
+            print("Mode plan : aucune ressource n'a été créée ni modifiée.")
+            return
+
+        if not args.yes:
+            try:
+                answer = input(
+                    "Confirmez-vous le démarrage du conteneur MySQL et l'exécution "
+                    "de ce fichier SQL dans cette base neuve ? [oui/Non] "
+                ).strip().lower()
+            except EOFError as exc:
+                raise MysqlInstallError(
+                    "Confirmation interactive indisponible. Relancez avec --yes "
+                    "uniquement si vous acceptez le plan affiché."
+                ) from exc
+            if answer not in ("oui", "o", "yes", "y"):
+                print("Installation annulée ; aucune ressource n'a été créée.")
+                return
+
+        result = install_mysql_from_dump(
+            plan,
+            host_port=args.port,
+            api_port=args.api_port,
+            startup_timeout=args.startup_timeout,
+            import_timeout=args.import_timeout,
+            state_dir=args.state_dir,
+            overwrite=args.overwrite,
+        )
+        print("Installation de la base MySQL terminée.")
+        print(f"- Hôte/port local : 127.0.0.1:{args.port}")
+        print(f"- Base : {result.database_name}")
+        print("- Conteneurs : axora_mysql et axora_api_mysql (Compose)")
+        print("- Volume MySQL persistant : axora_axora-mysql-data")
+        print(f"- Manifeste sémantique : {result.manifest_path}")
+        print(f"- Configuration privée : {result.state_path} (permissions 0600)")
+        print(f"- API Axora : {result.api_url}")
+        if result.reused_database:
+            print("- Base déjà importée : dump non réexécuté, services Compose réutilisés.")
+        print(
+            "Aucune clé LLM n'a été configurée par cette étape. "
+            "Axora reste en mode démo tant qu'un fournisseur et son token ne sont pas fournis."
+        )
+    except MysqlInstallError as exc:
+        raise SystemExit(f"Échec installation MySQL : {exc}") from exc
+
+
 async def run_cli(model_file: str | None = None):
     from axora.agent.runtime import AgentRuntime
     from axora.config import settings
@@ -128,6 +211,23 @@ def main():
     parser_introspect.add_argument("--output", "-o", type=str, help="Path to write generated YAML manifest")
     parser_introspect.add_argument("--name", "-n", type=str, help="Semantic model identifier")
 
+    parser_install = subparsers.add_parser(
+        "install-mysql",
+        help="Create an isolated MySQL container, import a SQL dump, and generate its semantic manifest",
+    )
+    parser_install.add_argument("--sql-file", required=True, help="MySQL-compatible SQL dump to import")
+    parser_install.add_argument("--database", help="Target database name (default: derived from the SQL filename)")
+    parser_install.add_argument("--name", "-n", help="Semantic model name (default: derived from the SQL filename)")
+    parser_install.add_argument("--output", "-o", help="Path for the generated YAML manifest")
+    parser_install.add_argument("--port", type=int, default=3307, help="Loopback host port for MySQL (default: 3307)")
+    parser_install.add_argument("--api-port", type=int, default=8001, help="Loopback host port for the MySQL-backed API (default: 8001)")
+    parser_install.add_argument("--state-dir", help="Directory for protected local installation state")
+    parser_install.add_argument("--startup-timeout", type=int, default=180, help="MySQL startup timeout in seconds")
+    parser_install.add_argument("--import-timeout", type=int, default=1800, help="SQL import timeout in seconds")
+    parser_install.add_argument("--plan", action="store_true", help="Validate prerequisites and show the plan without changes")
+    parser_install.add_argument("--yes", action="store_true", help="Confirm Docker startup and SQL import without prompting")
+    parser_install.add_argument("--overwrite", action="store_true", help="Allow replacing an existing manifest file")
+
     # Chat subcommand
     parser_chat = subparsers.add_parser("chat", help="Start conversational agent CLI")
     parser_chat.add_argument("--model-file", "-m", type=str, default="src/axora/semantic/definitions/gestion_paroissiale.yaml", help="Path to semantic model YAML")
@@ -136,6 +236,8 @@ def main():
 
     if args.subcommand == "introspect":
         run_introspect(args)
+    elif args.subcommand == "install-mysql":
+        run_mysql_install(args)
     else:
         model_file = getattr(args, "model_file", None)
         asyncio.run(run_cli(model_file))

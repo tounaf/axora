@@ -7,7 +7,7 @@ services:
     container_name: axora_api
     restart: unless-stopped
     env_file:
-      - .env
+      - ${AXORA_API_ENV_FILE:-.env}
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:?Set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:?Set POSTGRES_DB in .env}
       PYTHONPATH: /app/src
@@ -65,7 +65,7 @@ services:
   mysql:
     image: mysql:8.4
     container_name: axora_mysql
-    profiles: ["mysql"]
+    profiles: ["mysql", "mysql-agent"]
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-}
@@ -73,14 +73,47 @@ services:
       MYSQL_USER: ${MYSQL_USER:-axora}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
     ports:
-      - "127.0.0.1:3306:3306"
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
     volumes:
       - axora-mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\""]
+      test:
+        - CMD-SHELL
+        - MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysqladmin ping --protocol=TCP --host=127.0.0.1 --port=3306 --user=root
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
+
+  api-mysql:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: axora_api_mysql
+    profiles: ["mysql-agent"]
+    restart: unless-stopped
+    env_file:
+      - ${AXORA_INSTALL_ENV_FILE:?Set AXORA_INSTALL_ENV_FILE to the protected Axora install environment file}
+    environment:
+      DATABASE_URL: mysql+aiomysql://axora:${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in the Axora install environment}@mysql:3306/${AXORA_DATABASE_NAME:?Set AXORA_DATABASE_NAME in the Axora install environment}
+      SEMANTIC_MODEL_PATH: /app/config/semantic.yaml
+      PYTHONPATH: /app/src
+    ports:
+      - "127.0.0.1:${API_PORT:-8001}:8000"
+    volumes:
+      - ${AXORA_SEMANTIC_MODEL_HOST_PATH:?Set AXORA_SEMANTIC_MODEL_HOST_PATH to the generated semantic manifest}:/app/config/semantic.yaml:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
       start_period: 10s
 
 volumes:

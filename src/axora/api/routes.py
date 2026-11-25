@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from axora.agent.runtime import AgentRuntime
+from axora.config import settings
 from axora.conversations.repository import conversation_repo
 from axora.data.database import AsyncSessionLocal
 from axora.data.dynamic_models import build_dynamic_tables
@@ -24,7 +25,7 @@ from axora.views.builders import (
 router = APIRouter(prefix="/api/v1", tags=["Conversational Agent API"])
 
 # Initialize Semantic Model & Tables
-YAML_PATH = Path("src/axora/semantic/definitions/gestion_paroissiale.yaml")
+YAML_PATH = Path(settings.SEMANTIC_MODEL_PATH)
 semantic_service = SemanticModelService.from_yaml(YAML_PATH)
 build_dynamic_tables(semantic_service)
 

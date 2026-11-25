@@ -78,6 +78,16 @@ class SchemaReverseEngine:
         for tbl_name, tbl in domain_tables.items():
             entity_name = self.to_pascal_case(tbl_name)
             pk_col = tbl.primary_key[0] if tbl.primary_key else "id"
+            pk_type = tbl.columns.get(pk_col)
+            id_type = "string"
+            if pk_type:
+                sql_type = pk_type.sql_type.lower()
+                if "uuid" in sql_type:
+                    id_type = "uuid"
+                elif any(value in sql_type for value in ("int", "serial")):
+                    id_type = "integer"
+                elif any(value in sql_type for value in ("decimal", "numeric", "float", "double", "real")):
+                    id_type = "number"
 
             attributes: dict[str, Any] = {}
             for col_name, col in tbl.columns.items():
@@ -125,6 +135,7 @@ class SchemaReverseEngine:
                 "storage": {
                     "table": tbl_name,
                     "id": pk_col,
+                    "id_type": id_type,
                 },
                 "attributes": attributes,
                 "synonyms": synonyms,

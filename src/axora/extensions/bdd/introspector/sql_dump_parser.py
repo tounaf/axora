@@ -208,6 +208,8 @@ class SQLDumpParser(SchemaIntrospectorInterface):
     def _map_sql_type_to_semantic(self, sql_type: str, column_name: str, constraints: str) -> str:
         normalized_type = sql_type.lower()
         base_type = normalized_type.split("(")[0].strip()
+        if "uuid" in base_type:
+            return "uuid"
         if base_type in ("bool", "boolean") or (
             base_type == "tinyint" and ("(1)" in normalized_type or "bool" in column_name.lower())
         ):

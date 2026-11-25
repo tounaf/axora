@@ -29,7 +29,20 @@ def test_optional_admin_and_mysql_services_have_no_committed_passwords():
     assert mysql["environment"]["MYSQL_ROOT_PASSWORD"] == "${MYSQL_ROOT_PASSWORD:-}"
     assert mysql["environment"]["MYSQL_PASSWORD"] == "${MYSQL_PASSWORD:-}"
     assert "mysql" in mysql["profiles"]
-    assert mysql["ports"] == ["127.0.0.1:3306:3306"]
+    assert mysql["ports"] == ["127.0.0.1:${MYSQL_PORT:-3306}:3306"]
+    mysql_healthcheck = mysql["healthcheck"]["test"][-1]
+    assert "--protocol=TCP" in mysql_healthcheck
+    assert "--port=3306" in mysql_healthcheck
+    assert "$$MYSQL_ROOT_PASSWORD" in mysql_healthcheck
+
+    api_mysql = compose["services"]["api-mysql"]
+    assert api_mysql["build"]["dockerfile"] == "Dockerfile"
+    assert "mysql-agent" in api_mysql["profiles"]
+    assert api_mysql["depends_on"]["mysql"]["condition"] == "service_healthy"
+    assert api_mysql["environment"]["SEMANTIC_MODEL_PATH"] == "/app/config/semantic.yaml"
+    assert api_mysql["volumes"] == [
+        "${AXORA_SEMANTIC_MODEL_HOST_PATH:?Set AXORA_SEMANTIC_MODEL_HOST_PATH to the generated semantic manifest}:/app/config/semantic.yaml:ro"
+    ]
 
 
 def test_environment_example_uses_mock_and_contains_no_provider_credentials():

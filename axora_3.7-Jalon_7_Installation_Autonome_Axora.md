@@ -47,11 +47,14 @@ Un processus Axora exécuté dans un conteneur ne prétend pas contrôler l'hôt
 - Détection Docker CLI, daemon, Compose, ressources minimales et contexte hôte/conteneur.
 - Vérification de la configuration Compose du dépôt et inventaire limité au projet Axora.
 - Création d'une configuration locale à partir de valeurs par défaut sûres ; secrets générés localement, jamais fournis par le LLM.
-- Démarrage des services nécessaires à la démonstration : API et PostgreSQL ; outils annexes désactivables.
-- Attente du healthcheck réel de PostgreSQL, application du schéma Axora sur une base neuve et test de connexion API/DB.
+- Pour le déploiement courant, démarrage des services API et PostgreSQL via Compose ; outils annexes désactivables.
+- Pour le prototype d'import SQL retenu, démarrage d'une instance MySQL 8.4 dédiée via Docker, import du dump utilisateur et génération du manifeste YAML à partir de son schéma.
+- Attente du healthcheck de la base sélectionnée, application ou import du schéma selon le parcours, et vérification de la connexion API/DB.
 - Fournisseur LLM configuré par l'utilisateur, ou mode de démonstration explicitement limité sans fournisseur distant.
 - Rapport récapitulatif et reprise après interruption.
 - Mode « plan » sans mutation avant le premier démarrage.
+
+**Décision de prototype :** Docker est supposé déjà installé et accessible. La première tranche de l'import utilise MySQL 8.4, sans installation native du moteur. Elle ne modifie pas le déploiement Compose existant, qui conserve PostgreSQL.
 
 ### Non inclus dans la première livraison
 
@@ -180,6 +183,10 @@ Résultats de cette tranche : **10 tests ciblés passent**, build de l'image ré
 - Rendre chaque étape idempotente et reprendre après interruption sans opérations destructives.
 
 **Critère de sortie :** une panne/reprise ne duplique pas les étapes ou données et ne modifie pas une base existante sans accord explicite.
+
+**Première tranche MySQL implémentée :** `PYTHONPATH=src python -m axora.cli install-mysql --sql-file <dump.sql> --plan` valide Docker, Compose et le schéma sans mutation. Sans `--plan`, la commande demande confirmation, réutilise le service `mysql` de `compose.yaml`, construit l'API depuis le `Dockerfile`, importe le fichier dans une base neuve, génère le manifeste depuis le même dump et conserve l'état/les secrets locaux avec permissions 0600. Les dumps monobase avec `USE` ou `CREATE DATABASE` sont pris en charge ; leur nom est détecté ou doit correspondre à `--database`. La même base et son dump ne sont pas réimportés lors d'un lancement suivant. Une base existante mais non gérée n'est jamais écrasée ; un manifeste déjà présent n'est remplacé qu'avec `--overwrite`. Aucune ressource n'est supprimée. Le dump est exécuté comme `root` dans MySQL et doit donc être de confiance.
+
+Cette tranche ne configure pas le fournisseur LLM. L'API est démarrée sur le manifeste importé, mais les types SQL exotiques et les identifiants qui ne sont pas des UUID nécessitent encore une validation de compatibilité dans le runtime. Les tests unitaires simulent les commandes Compose ; un test d'installation complet avec Docker réel reste à effectuer.
 
 ### Lot 4 - Fournisseur LLM et readiness complète
 
