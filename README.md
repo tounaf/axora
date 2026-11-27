@@ -150,6 +150,7 @@ axora/
 - [Architecture Technique du MVP](axora_0.2-Architecture_technique_du_MVP.md)
 - [Modèle de Données et Modèle Sémantique (v0.2)](axora_0.2-Modele_de_donnees_initial_et_modele_semantique.md)
 - [Guide de Développement de l'Agent Métier (v0.3)](axora_0.3-Guide_de_developpement_de_l_agent.md)
+- [Suivi de progression de l'agent et des parcours (v3.8)](axora_3.8-Suivi_de_Progression_Agent_et_Parcours.md)
 - [Architecture des Connecteurs BDD Pluggables v3.0](axora_3.0-Architecture_Connecteurs_BDD_Pluggables_Extensions.md)
 - [Jalon 1 : Conception & Implémentation Connecteurs Core (Postgres & SQLite) v3.1](axora_3.1-Jalon_1_Conception_et_Implementation_Connecteurs_BDD_Core_Postgres_SQLite.md)
 - [Jalon 2 : Conception & Implémentation Connecteur MySQL & MariaDB v3.2](axora_3.2-Jalon_2_Conception_et_Implementation_Connecteur_MySQL_MariaDB.md)

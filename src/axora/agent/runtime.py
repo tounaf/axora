@@ -1,8 +1,17 @@
+from dataclasses import dataclass
+
 from axora.agent.context import AgentContext
 from axora.agent.loop import run_agent_loop
 from axora.llm.interface import LLMAdapter
 from axora.llm.provider import get_llm_adapter
+from axora.progress import ProgressCallback
 from axora.tools.registry import ToolRegistry
+
+
+@dataclass(frozen=True)
+class AgentRunResult:
+    response: str
+    context: AgentContext
 
 
 class AgentRuntime:
@@ -34,8 +43,25 @@ class AgentRuntime:
         user_message: str,
         history: list[dict[str, str]] | None = None,
         max_iterations: int | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> str:
         """Processes a natural language intent through the agent execution loop."""
+        result = await self.process_intent_with_context(
+            user_message=user_message,
+            history=history,
+            max_iterations=max_iterations,
+            progress_callback=progress_callback,
+        )
+        return result.response
+
+    async def process_intent_with_context(
+        self,
+        user_message: str,
+        history: list[dict[str, str]] | None = None,
+        max_iterations: int | None = None,
+        progress_callback: ProgressCallback | None = None,
+    ) -> AgentRunResult:
+        """Processes an intent and returns its request-local context for channel adapters."""
         ctx = AgentContext(user_message=user_message, history=history or [])
         res = await run_agent_loop(
             user_message=user_message,
@@ -44,6 +70,7 @@ class AgentRuntime:
             history=history,
             max_iterations=max_iterations,
             context=ctx,
+            progress_callback=progress_callback,
         )
         self._last_context = ctx
-        return res
+        return AgentRunResult(response=res, context=ctx)

@@ -48,6 +48,36 @@ async def test_agent_loop_tool_call_then_final_answer(tool_registry):
 
 
 @pytest.mark.asyncio
+async def test_agent_loop_publishes_safe_progress_for_each_tool(tool_registry):
+    mock_llm = MockLLMAdapter([
+        AgentDecision(
+            type="call_tool",
+            tool_call=ToolCall(name="discover_model", arguments={"concept": "Membre"}),
+        ),
+        AgentDecision(type="final_answer", content="Voici le résultat."),
+    ])
+    events = []
+
+    response = await run_agent_loop(
+        "Décrire l'entité Membre",
+        mock_llm,
+        tool_registry,
+        progress_callback=events.append,
+    )
+
+    assert response == "Voici le résultat."
+    assert [(event.phase, event.status) for event in events] == [
+        ("analysis", "started"),
+        ("tool_execution", "started"),
+        ("tool_execution", "completed"),
+        ("analysis", "started"),
+        ("response", "completed"),
+    ]
+    assert events[1].tool == "discover_model"
+    assert all("concept" not in event.model_dump_json() for event in events)
+
+
+@pytest.mark.asyncio
 async def test_agent_loop_max_iterations_exceeded(tool_registry):
     # LLM keeps making tool calls indefinitely
     infinite_calls = [
@@ -55,9 +85,17 @@ async def test_agent_loop_max_iterations_exceeded(tool_registry):
         for _ in range(10)
     ]
     mock_llm = MockLLMAdapter(infinite_calls)
-    response = await run_agent_loop("Test boucle infinie", mock_llm, tool_registry, max_iterations=3)
+    events = []
+    response = await run_agent_loop(
+        "Test boucle infinie",
+        mock_llm,
+        tool_registry,
+        max_iterations=3,
+        progress_callback=events.append,
+    )
     assert "n'a pas pu être finalisée" in response
     assert "3 itérations" in response
+    assert events[-1].type == "error"
 
 
 @pytest.mark.asyncio

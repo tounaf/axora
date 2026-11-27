@@ -12,6 +12,7 @@ FEAT-05 fournit le moteur principal d orchestration d Axora :
 1. **`AgentContext` (`src/axora/agent/context.py`)** : Construit dynamiquement le prompt système enrichi de l historique des conversations et des observations d outils.
 2. **`run_agent_loop` (`src/axora/agent/loop.py`)** : Exécute la boucle itérative bornée (`Prompt -> Décision LLM -> Exécution Tool -> Observation`).
 3. **`AgentRuntime` (`src/axora/agent/runtime.py`)** : Orchestrateur de haut niveau combinant adaptateurs LLM, registre d outils et boucle d exécution.
+4. **Suivi de progression** : Le runtime peut publier des événements sûrs pendant l'analyse, chaque exécution d'outil et la réponse finale. Les adaptateurs de canal rendent ces événements sans exposer le raisonnement interne du LLM.
 
 ---
 
@@ -90,6 +91,8 @@ La suite de tests dans `tests/test_agent_loop.py` couvre :
 3. Enchaînement itératif d un appel d outil suivi d une réponse finale.
 4. Arrêt propre lorsque la limite maximale d itérations est atteinte.
 5. Fonctionnement global de `AgentRuntime`.
+
+Le contrat commun et les canaux concernés sont décrits dans [la spécification du suivi de progression](axora_3.8-Suivi_de_Progression_Agent_et_Parcours.md).
 
 **Commande d exécution :**
 ```bash

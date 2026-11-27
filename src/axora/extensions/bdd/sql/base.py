@@ -153,6 +153,15 @@ class SQLBaseConnector(DatabaseConnectorInterface):
         async with self._engine.begin() as conn:
             await conn.run_sync(metadata.create_all)
 
+    def _resolve_entity_name(self, entity_def: EntityDefinition) -> str:
+        if hasattr(entity_def, "name"):
+            return entity_def.name
+        if self.semantic_service and hasattr(self.semantic_service, "_model"):
+            for name, edef in self.semantic_service._model.entities.items():
+                if edef == entity_def:
+                    return name
+        return entity_def.storage.table
+
     async def execute_query(
         self,
         entity_def: EntityDefinition,
@@ -168,10 +177,11 @@ class SQLBaseConnector(DatabaseConnectorInterface):
 
             self._query_engine = QueryEngine(self.semantic_service)
 
+        entity_name = self._resolve_entity_name(entity_def)
         async with self.session_scope() as session:
             return await self._query_engine.execute_query(
                 session=session,
-                entity_name=entity_def.name,
+                entity_name=entity_name,
                 select_fields=select_fields,
                 filters=filters,
                 limit=limit,
@@ -192,20 +202,21 @@ class SQLBaseConnector(DatabaseConnectorInterface):
 
             self._mutation_engine = MutationEngine(self.semantic_service)
 
+        entity_name = self._resolve_entity_name(entity_def)
         async with self.session_scope() as session:
             async with session.begin():
                 if action == "create":
                     return await self._mutation_engine.create_record(
                         session=session,
-                        entity_name=entity_def.name,
+                        entity_name=entity_name,
                         payload=payload,
                     )
                 elif action == "update":
                     if record_id is None:
-                        raise ValueError(f"Action 'update' on entity '{entity_def.name}' requires a 'record_id'.")
+                        raise ValueError(f"Action 'update' on entity '{entity_name}' requires a 'record_id'.")
                     return await self._mutation_engine.update_record(
                         session=session,
-                        entity_name=entity_def.name,
+                        entity_name=entity_name,
                         record_id=record_id,
                         payload=payload,
                     )

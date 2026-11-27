@@ -79,6 +79,12 @@ src/axora/
   }
   ```
 
+### 3.3 Flux de progression (`POST /api/v1/chat/stream`)
+
+Les clients qui doivent afficher le traitement en direct utilisent cet endpoint SSE. Il émet les événements `progress` et se termine par `completed` contenant la réponse finale, l'identifiant de conversation et la vue éventuelle, ou par `error` en cas d'échec. `POST /api/v1/chat` conserve son contrat synchrone historique.
+
+Les événements de progression ne sont pas ajoutés à l'historique des messages. Ils ne contiennent ni prompts, ni raisonnements internes du LLM, ni arguments bruts des outils.
+
 ---
 
 ## 4. Diagramme de Séquence de Traitement d une Requête HTTP

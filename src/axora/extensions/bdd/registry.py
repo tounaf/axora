@@ -56,5 +56,5 @@ class ConnectorRegistry:
         if "://" in url:
             return url.split("://", 1)[0].lower().strip()
         raise ValueError(
-            f"Invalid database URL: '{url}'. Expected standard URI format with '://' delimiter."
+            f"Missing scheme delimiter in database URL: '{url}'. Expected standard URI format with '://' delimiter."
         )

@@ -2,12 +2,24 @@ import argparse
 import asyncio
 import sys
 from pathlib import Path
+from axora.progress import ProgressEvent, publish_progress
+
+
+def _display_progress(event: ProgressEvent) -> None:
+    marker = "[!]" if event.type == "error" or event.status == "failed" else "[*]"
+    print(f"{marker} {event.message}", flush=True)
 
 
 def run_introspect(args: argparse.Namespace) -> None:
     """Executes database schema reverse-engineering into a semantic model YAML."""
     from axora.extensions.bdd.introspector import introspect_live_db, introspect_sql_file
 
+    publish_progress(
+        _display_progress,
+        phase="bootstrap",
+        status="started",
+        message="Préparation de l'introspection du modèle…",
+    )
     print("=" * 60)
     print("   AXORA SCHEMA INTROSPECTION & REVERSE-ENGINEERING")
     print("=" * 60)
@@ -21,6 +33,12 @@ def run_introspect(args: argparse.Namespace) -> None:
         model_name = args.name or sql_path.stem
         output_yaml = args.output or f"src/axora/semantic/definitions/{model_name}.yaml"
 
+        publish_progress(
+            _display_progress,
+            phase="installation",
+            status="started",
+            message="Analyse du fichier SQL…",
+        )
         print(f"[*] Parsing SQL DDL file: {sql_path}")
         print(f"[*] Target Model Name:   {model_name}")
         manifest = introspect_sql_file(sql_path, output_yaml=output_yaml, model_name=model_name)
@@ -29,6 +47,12 @@ def run_introspect(args: argparse.Namespace) -> None:
         model_name = args.name or "live_db"
         output_yaml = args.output or f"src/axora/semantic/definitions/{model_name}.yaml"
 
+        publish_progress(
+            _display_progress,
+            phase="installation",
+            status="started",
+            message="Connexion à la base et inspection du schéma…",
+        )
         print(f"[*] Introspecting Live Database: {args.db_url}")
         print(f"[*] Target Model Name:          {model_name}")
         manifest = introspect_live_db(args.db_url, output_yaml=output_yaml, model_name=model_name)
@@ -47,6 +71,12 @@ def run_introspect(args: argparse.Namespace) -> None:
 
     print(f"\n[+] Manifest written to: {Path(output_yaml).resolve()}")
     print("=" * 60)
+    publish_progress(
+        _display_progress,
+        phase="installation",
+        status="completed",
+        message="Introspection terminée ; le manifeste sémantique est prêt.",
+    )
 
 
 def run_mysql_install(args: argparse.Namespace) -> None:
@@ -59,6 +89,12 @@ def run_mysql_install(args: argparse.Namespace) -> None:
     )
 
     try:
+        publish_progress(
+            _display_progress,
+            phase="installation",
+            status="started",
+            message="Validation du plan d'installation…",
+        )
         if not 1024 <= args.port <= 65535 or not 1024 <= args.api_port <= 65535:
             raise MysqlInstallError("Les ports locaux doivent être compris entre 1024 et 65535.")
         if args.port == args.api_port:
@@ -71,6 +107,12 @@ def run_mysql_install(args: argparse.Namespace) -> None:
             model_name=args.name,
             manifest_path=args.output,
             overwrite=args.overwrite,
+        )
+        publish_progress(
+            _display_progress,
+            phase="installation",
+            status="completed",
+            message="Plan d'installation validé.",
         )
         print("Plan d'installation Axora — MySQL")
         print(f"- Fichier SQL : {plan.sql_file}")
@@ -113,6 +155,7 @@ def run_mysql_install(args: argparse.Namespace) -> None:
             import_timeout=args.import_timeout,
             state_dir=args.state_dir,
             overwrite=args.overwrite,
+            progress_callback=_display_progress,
         )
         print("Installation de la base MySQL terminée.")
         print(f"- Hôte/port local : 127.0.0.1:{args.port}")
@@ -129,6 +172,13 @@ def run_mysql_install(args: argparse.Namespace) -> None:
             "Axora reste en mode démo tant qu'un fournisseur et son token ne sont pas fournis."
         )
     except MysqlInstallError as exc:
+        publish_progress(
+            _display_progress,
+            phase="installation",
+            event_type="error",
+            status="failed",
+            message="L'installation MySQL d'Axora a échoué.",
+        )
         raise SystemExit(f"Échec installation MySQL : {exc}") from exc
 
 
@@ -145,7 +195,19 @@ async def run_cli(model_file: str | None = None):
     from axora.tools.registry import ToolRegistry
     from axora.tools.update_record import UpdateRecordTool
 
+    publish_progress(
+        _display_progress,
+        phase="bootstrap",
+        status="started",
+        message="Chargement du fournisseur de langage…",
+    )
     llm_adapter = get_llm_adapter()
+    publish_progress(
+        _display_progress,
+        phase="bootstrap",
+        status="completed",
+        message="Fournisseur de langage prêt.",
+    )
 
     print("=" * 60)
     print("   AXORA INTERACTIVE CLI — From intent to action.")
@@ -158,16 +220,47 @@ async def run_cli(model_file: str | None = None):
         print(f"[!] Error: Semantic model file not found at {yaml_path}")
         sys.exit(1)
 
+    publish_progress(
+        _display_progress,
+        phase="bootstrap",
+        status="started",
+        message="Chargement du modèle sémantique…",
+    )
     semantic_service = SemanticModelService.from_yaml(yaml_path)
     build_dynamic_tables(semantic_service)
+    publish_progress(
+        _display_progress,
+        phase="bootstrap",
+        status="completed",
+        message="Modèle sémantique et tables prêts.",
+    )
 
+    publish_progress(
+        _display_progress,
+        phase="bootstrap",
+        status="started",
+        message="Enregistrement des outils de l'agent…",
+    )
     registry = ToolRegistry()
     registry.register(DiscoverModelTool(semantic_service))
     registry.register(QueryDataTool(semantic_service, AsyncSessionLocal))
     registry.register(CreateRecordTool(semantic_service, AsyncSessionLocal))
     registry.register(UpdateRecordTool(semantic_service, AsyncSessionLocal))
+    publish_progress(
+        _display_progress,
+        phase="bootstrap",
+        status="completed",
+        message="Outils enregistrés.",
+    )
 
     runtime = AgentRuntime(tool_registry=registry, llm_adapter=llm_adapter)
+    publish_progress(
+        _display_progress,
+        phase="bootstrap",
+        event_type="completed",
+        status="completed",
+        message="Axora est prêt à recevoir vos demandes.",
+    )
 
     print(f"[*] Semantic Model:  {semantic_service.model_name} (v{semantic_service.version})")
     print(f"[*] Registered Tools: {[t.name for t in registry.list_tools()]}")
@@ -186,7 +279,11 @@ async def run_cli(model_file: str | None = None):
                 break
 
             print("[*] Traitement par le Runtime Agent...")
-            response = await runtime.process_intent(user_input, history=history)
+            response = await runtime.process_intent(
+                user_input,
+                history=history,
+                progress_callback=_display_progress,
+            )
 
             print(f"\nAxora Agent > {response}\n")
             print("-" * 60)

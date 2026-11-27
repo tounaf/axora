@@ -1,13 +1,19 @@
+import asyncio
+import json
+import logging
 from pathlib import Path
 from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
+from starlette.responses import StreamingResponse
+from axora.agent.context import AgentContext
 from axora.agent.runtime import AgentRuntime
 from axora.config import settings
 from axora.conversations.repository import conversation_repo
 from axora.data.database import AsyncSessionLocal
 from axora.data.dynamic_models import build_dynamic_tables
 from axora.llm.provider import get_llm_adapter
+from axora.progress import ProgressCallback, ProgressEvent
 from axora.semantic.service import SemanticModelService
 from axora.tools.create_record import CreateRecordTool
 from axora.tools.discover_model import DiscoverModelTool
@@ -23,17 +29,21 @@ from axora.views.builders import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["Conversational Agent API"])
+logger = logging.getLogger("axora.api")
 
 # Initialize Semantic Model & Tables
+logger.info("Axora bootstrap: loading semantic model.")
 YAML_PATH = Path(settings.SEMANTIC_MODEL_PATH)
 semantic_service = SemanticModelService.from_yaml(YAML_PATH)
 build_dynamic_tables(semantic_service)
+logger.info("Axora bootstrap: semantic model and dynamic tables ready.")
 
 # Initialize Extensible View Registry
 view_registry = ViewRegistry()
 view_registry.register(DynamicTableViewBuilder(semantic_service))
 view_registry.register(DynamicChartViewBuilder())
 view_registry.register(DynamicMetricCardsBuilder())
+logger.info("Axora bootstrap: view registry ready.")
 
 # Initialize Tool Registry
 tool_registry = ToolRegistry()
@@ -42,9 +52,11 @@ tool_registry.register(QueryDataTool(semantic_service, AsyncSessionLocal))
 tool_registry.register(CreateRecordTool(semantic_service, AsyncSessionLocal))
 tool_registry.register(UpdateRecordTool(semantic_service, AsyncSessionLocal))
 tool_registry.register(RenderViewTool(view_registry))
+logger.info("Axora bootstrap: tool registry ready.")
 
 # Initialize Agent Runtime
 agent_runtime = AgentRuntime(tool_registry=tool_registry, llm_adapter=get_llm_adapter())
+logger.info("Axora bootstrap: agent runtime ready.")
 
 
 class ChatRequest(BaseModel):
@@ -57,6 +69,50 @@ class ChatResponse(BaseModel):
     response: str
     view: dict[str, Any] | None = None
     status: str = "completed"
+
+
+def _extract_view(context: Any) -> dict[str, Any] | None:
+    if not context.observations:
+        return None
+    for obs in reversed(context.observations):
+        if (
+            obs.tool_call.name == "render_view"
+            and obs.result.status == "success"
+            and isinstance(obs.result.data, dict)
+        ):
+            return obs.result.data
+        if (
+            obs.tool_call.name == "query_data"
+            and obs.result.status == "success"
+            and isinstance(obs.result.data, dict)
+        ):
+            records = obs.result.data.get("records", [])
+            if records and view_registry.has("table"):
+                return view_registry.build_view("table", obs.result.data).model_dump()
+            return None
+    return None
+
+
+async def _process_chat_message(
+    request: ChatRequest,
+    progress_callback: ProgressCallback | None = None,
+) -> ChatResponse:
+    session = conversation_repo.get_or_create_session(request.conversation_id)
+    history = conversation_repo.get_history_for_agent(session.id)
+    conversation_repo.add_message(session.id, role="user", content=request.message)
+
+    run_result = await agent_runtime.process_intent_with_context(
+        user_message=request.message,
+        history=history,
+        progress_callback=progress_callback,
+    )
+    conversation_repo.add_message(session.id, role="assistant", content=run_result.response)
+    return ChatResponse(
+        conversation_id=session.id,
+        response=run_result.response,
+        view=_extract_view(run_result.context),
+        status="completed",
+    )
 
 
 class MessageSchema(BaseModel):
@@ -76,48 +132,55 @@ class SessionSchema(BaseModel):
 @router.post("/chat", response_model=ChatResponse, status_code=status.HTTP_200_OK)
 async def process_chat_message(request: ChatRequest) -> ChatResponse:
     """Processes a natural language intent message through Axora Agent Runtime."""
-    session = conversation_repo.get_or_create_session(request.conversation_id)
-
-    # 1. Retrieve history before appending current message
-    history = conversation_repo.get_history_for_agent(session.id)
-
-    # 2. Record user message
-    conversation_repo.add_message(session.id, role="user", content=request.message)
-
-    # 3. Process intent via Agent Runtime
     try:
-        agent_response = await agent_runtime.process_intent(
-            user_message=request.message,
-            history=history,
-        )
+        return await _process_chat_message(request)
     except Exception as exc:
+        logger.exception("Failed to process chat request.")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process intent: {exc}",
         ) from exc
 
-    # 4. Extract view payload if any view or query tool was executed
-    view_data: dict[str, Any] | None = None
-    if agent_runtime.last_context and agent_runtime.last_context.observations:
-        for obs in reversed(agent_runtime.last_context.observations):
-            if obs.tool_call.name == "render_view" and obs.result.status == "success" and isinstance(obs.result.data, dict):
-                view_data = obs.result.data
-                break
-            elif obs.tool_call.name == "query_data" and obs.result.status == "success" and isinstance(obs.result.data, dict):
-                records = obs.result.data.get("records", [])
-                if records and view_registry.has("table"):
-                    table_view = view_registry.build_view("table", obs.result.data)
-                    view_data = table_view.model_dump()
-                break
 
-    # 5. Record agent response
-    conversation_repo.add_message(session.id, role="assistant", content=agent_response)
+@router.post("/chat/stream", response_class=StreamingResponse)
+async def stream_chat_message(request: ChatRequest) -> StreamingResponse:
+    """Streams safe progress events and the final chat result as server-sent events."""
+    async def event_stream():
+        event_queue: asyncio.Queue[tuple[str | None, dict[str, Any] | None]] = asyncio.Queue()
 
-    return ChatResponse(
-        conversation_id=session.id,
-        response=agent_response,
-        view=view_data,
-        status="completed",
+        def enqueue_progress(event: ProgressEvent) -> None:
+            event_queue.put_nowait((event.type, event.model_dump(mode="json")))
+
+        async def process_request() -> None:
+            try:
+                result = await _process_chat_message(request, progress_callback=enqueue_progress)
+                await event_queue.put(("completed", result.model_dump(mode="json")))
+            except Exception:
+                logger.exception("Failed to process streamed chat request.")
+                await event_queue.put((
+                    "error",
+                    {"message": "Une erreur est survenue pendant le traitement de la demande."},
+                ))
+            finally:
+                await event_queue.put((None, None))
+
+        processing_task = asyncio.create_task(process_request())
+        try:
+            while True:
+                event_type, payload = await event_queue.get()
+                if event_type is None:
+                    break
+                data = json.dumps(payload, ensure_ascii=False)
+                yield f"event: {event_type}\ndata: {data}\n\n"
+            await processing_task
+        except asyncio.CancelledError:
+            processing_task.cancel()
+            raise
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

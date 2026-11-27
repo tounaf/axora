@@ -23,6 +23,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
   const [messages, setMessages] = useState<Message[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [progressStatus, setProgressStatus] = useState('Préparation du traitement…')
   const chatAreaRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -51,10 +52,11 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
 
     setMessages((prev) => [...prev, userMsg])
     setIsLoading(true)
+    setProgressStatus('Connexion à Axora…')
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_AXORA_API_URL || 'http://localhost:8000/api/v1'
-      const resp = await fetch(`${apiUrl}/chat`, {
+      const resp = await fetch(`${apiUrl}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -63,30 +65,72 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
         }),
       })
 
-      const data = await resp.json()
-      if (data.conversation_id) {
-        setActiveConversationId(data.conversation_id)
+      if (!resp.ok) {
+        const detail = await resp.text()
+        throw new Error(detail || `La requête a échoué (${resp.status}).`)
       }
+      if (!resp.body) throw new Error("Le flux de progression n'est pas disponible.")
+
+      const reader = resp.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      type StreamResult = { conversation_id?: string; response?: string; view?: ViewPayload | null }
+      let finalData: StreamResult | null = null
+
+      const handleFrame = (frame: string) => {
+        let eventType = 'message'
+        const dataLines: string[] = []
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) eventType = line.slice(6).trim()
+          if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+        }
+        if (dataLines.length === 0) return
+
+        const payload = JSON.parse(dataLines.join('\n'))
+        if (eventType === 'progress' || eventType === 'error') {
+          setProgressStatus(payload.message || "Axora traite votre demande…")
+        } else if (eventType === 'completed') {
+          finalData = payload
+          if (payload.conversation_id) setActiveConversationId(payload.conversation_id)
+          setProgressStatus('Réponse prête.')
+        }
+      }
+
+      while (true) {
+        const { value, done } = await reader.read()
+        buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, '\n')
+        let frameEnd = buffer.indexOf('\n\n')
+        while (frameEnd !== -1) {
+          handleFrame(buffer.slice(0, frameEnd))
+          buffer = buffer.slice(frameEnd + 2)
+          frameEnd = buffer.indexOf('\n\n')
+        }
+        if (done) break
+      }
+      if (buffer.trim()) handleFrame(buffer)
+      const completedData = finalData as StreamResult | null
+      if (!completedData) throw new Error("Le flux Axora s'est terminé sans réponse finale.")
 
       const agentMsg: Message = {
         id: 'agent-' + Date.now(),
         role: 'assistant',
-        content: data.response || 'Traitement effectué.',
-        view: data.view || null,
+        content: completedData.response || 'Traitement effectué.',
+        view: completedData.view || null,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
 
       setMessages((prev) => [...prev, agentMsg])
-    } catch (err: any) {
+    } catch (err) {
       const errorMsg: Message = {
         id: 'err-' + Date.now(),
         role: 'assistant',
-        content: "Une erreur est survenue lors de la communication avec l'Agent Axora : " + err.message,
+        content: "Une erreur est survenue lors de la communication avec l'Agent Axora : " + (err instanceof Error ? err.message : String(err)),
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       }
       setMessages((prev) => [...prev, errorMsg])
     } finally {
       setIsLoading(false)
+      setProgressStatus('')
     }
   }
 
@@ -146,7 +190,6 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
                 </div>
                 <div
                   className="prose prose-slate prose-sm text-xs leading-relaxed text-slate-800 max-w-none"
-                  dangerouslySetInnerHTML={{ __html: marked.parse(m.content) as string }}
                 />
 
                 {/* Render Extensible Dynamic UI View if available */}
@@ -168,7 +211,7 @@ export const ChatCanvas: React.FC<ChatCanvasProps> = ({ onMessageSent, activeCon
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-600"></span>
               </span>
-              <span>Traitement de l'intention par le Runtime Agent...</span>
+              <span>{progressStatus || "Traitement de l'intention par le Runtime Agent…"}</span>
             </div>
           </div>
         )}

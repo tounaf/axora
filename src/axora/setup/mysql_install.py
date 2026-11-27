@@ -11,6 +11,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
+from axora.progress import ProgressCallback, publish_progress
 
 from axora.extensions.bdd.introspector import SQLDumpParser, introspect_sql_file
 
@@ -414,7 +415,7 @@ def _mysql_exec(
     return result.stdout.decode("utf-8", errors="replace").strip()
 
 
-def install_mysql_from_dump(
+def _install_mysql_from_dump(
     plan: MysqlInstallPlan,
     *,
     host_port: int = 3307,
@@ -423,7 +424,14 @@ def install_mysql_from_dump(
     import_timeout: int = DEFAULT_IMPORT_TIMEOUT,
     state_dir: str | Path | None = None,
     overwrite: bool = False,
+    progress_callback: ProgressCallback | None = None,
 ) -> MysqlInstallResult:
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="started",
+        message="Vérification des prérequis et de l'état local…",
+    )
     if not 1024 <= host_port <= 65535 or not 1024 <= api_port <= 65535:
         raise MysqlInstallError("Les ports locaux doivent être compris entre 1024 et 65535.")
     if host_port == api_port:
@@ -443,6 +451,12 @@ def install_mysql_from_dump(
     root = _project_root()
     compose_version = _check_compose(root)
     server_version = check_docker()
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="completed",
+        message=f"Docker {server_version} et Compose {compose_version} sont disponibles.",
+    )
     install_state_dir = Path(
         state_dir or Path.home() / ".config" / "axora" / "installations"
     ).expanduser().resolve()
@@ -478,13 +492,31 @@ def install_mysql_from_dump(
 
     print(f"Docker {server_version} et Compose {compose_version} détectés.")
     print("Démarrage/réutilisation des services MySQL Axora depuis compose.yaml.")
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="started",
+        message="Démarrage ou réutilisation du service MySQL…",
+    )
     _run_compose(
         [*compose, "up", "--detach", "--wait", "--wait-timeout", str(startup_timeout), "mysql"],
         cwd=root,
         timeout=startup_timeout + 30,
     )
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="completed",
+        message="Service MySQL disponible.",
+    )
 
     if not reused_database:
+        publish_progress(
+            progress_callback,
+            phase="installation",
+            status="started",
+            message="Import du fichier SQL dans la base cible…",
+        )
         existing_schema = _mysql_exec(
             compose,
             root,
@@ -542,7 +574,26 @@ def install_mysql_from_dump(
             plan=plan,
             api_port=api_port,
         )
+        publish_progress(
+            progress_callback,
+            phase="installation",
+            status="completed",
+            message="Import SQL terminé.",
+        )
+    else:
+        publish_progress(
+            progress_callback,
+            phase="installation",
+            status="completed",
+            message="Base déjà importée : réutilisation sans nouvel import.",
+        )
 
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="started",
+        message="Génération du manifeste sémantique…",
+    )
     try:
         introspect_sql_file(
             plan.sql_file,
@@ -554,9 +605,21 @@ def install_mysql_from_dump(
             f"L'import a réussi, mais la génération du manifeste a échoué : {exc}. "
             "La base est conservée pour reprise."
         ) from exc
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="completed",
+        message="Manifeste sémantique généré.",
+    )
 
     _write_compose_env(env_path, state_path=state_path, state=state, plan=plan, api_port=api_port)
     compose = _compose_command(env_path)
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="started",
+        message="Démarrage de l'API Axora et vérification de sa disponibilité…",
+    )
     _run_compose(
         [
             *compose,
@@ -565,6 +628,12 @@ def install_mysql_from_dump(
         ],
         cwd=root,
         timeout=startup_timeout + 300,
+    )
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="completed",
+        message="API Axora disponible.",
     )
 
     _write_private_file(
@@ -578,3 +647,50 @@ def install_mysql_from_dump(
         api_url=f"http://127.0.0.1:{api_port}",
         reused_database=reused_database,
     )
+
+
+def install_mysql_from_dump(
+    plan: MysqlInstallPlan,
+    *,
+    host_port: int = 3307,
+    api_port: int = 8001,
+    startup_timeout: int = DEFAULT_STARTUP_TIMEOUT,
+    import_timeout: int = DEFAULT_IMPORT_TIMEOUT,
+    state_dir: str | Path | None = None,
+    overwrite: bool = False,
+    progress_callback: ProgressCallback | None = None,
+) -> MysqlInstallResult:
+    publish_progress(
+        progress_callback,
+        phase="installation",
+        status="started",
+        message="Démarrage du parcours d'installation Axora…",
+    )
+    try:
+        result = _install_mysql_from_dump(
+            plan,
+            host_port=host_port,
+            api_port=api_port,
+            startup_timeout=startup_timeout,
+            import_timeout=import_timeout,
+            state_dir=state_dir,
+            overwrite=overwrite,
+            progress_callback=progress_callback,
+        )
+    except MysqlInstallError:
+        publish_progress(
+            progress_callback,
+            event_type="error",
+            phase="installation",
+            status="failed",
+            message="L'installation Axora a échoué ; les ressources existantes sont conservées.",
+        )
+        raise
+    publish_progress(
+        progress_callback,
+        event_type="completed",
+        phase="installation",
+        status="completed",
+        message="Installation Axora terminée.",
+    )
+    return result
