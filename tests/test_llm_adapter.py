@@ -1,6 +1,14 @@
 import pytest
 from axora.agent.decisions import AgentDecision, ToolCall
-from axora.llm.provider import GeminiLLMAdapter, GroqLLMAdapter, MockLLMAdapter, NvidiaLLMAdapter, OpenAILLMAdapter, get_llm_adapter
+from axora.llm.provider import (
+    GeminiLLMAdapter,
+    GroqLLMAdapter,
+    MockLLMAdapter,
+    NvidiaLLMAdapter,
+    OllamaLLMAdapter,
+    OpenAILLMAdapter,
+    get_llm_adapter,
+)
 
 
 @pytest.mark.asyncio
@@ -238,6 +246,40 @@ def test_parse_agent_decision_from_json_malformed_failed_gen():
     assert "Voici la liste de tous les membres" in decision.content
 
 
+def test_parse_agent_decision_tool_name_in_type_with_tool_call():
+    from axora.llm.provider import parse_agent_decision_from_json
+    raw_json = """{
+      "type": "query_data",
+      "tool_call": {
+        "name": "query_data",
+        "arguments": {
+          "entity": "Membre",
+          "select": ["nom", "prenom"]
+        }
+      },
+      "content": null
+    }"""
+    decision = parse_agent_decision_from_json(raw_json)
+    assert decision.type == "call_tool"
+    assert decision.tool_call.name == "query_data"
+    assert decision.tool_call.arguments == {"entity": "Membre", "select": ["nom", "prenom"]}
+
+
+def test_parse_agent_decision_tool_name_in_type_direct_arguments():
+    from axora.llm.provider import parse_agent_decision_from_json
+    raw_json = """{
+      "type": "query_data",
+      "arguments": {
+        "entity": "Paroisse",
+        "limit": 10
+      }
+    }"""
+    decision = parse_agent_decision_from_json(raw_json)
+    assert decision.type == "call_tool"
+    assert decision.tool_call.name == "query_data"
+    assert decision.tool_call.arguments == {"entity": "Paroisse", "limit": 10}
+
+
 @pytest.mark.asyncio
 async def test_gemini_llm_adapter_fallback():
     adapter = GeminiLLMAdapter(api_key="AIzaSy_your_free_key_here", model="gemini-1.5-flash")
@@ -262,3 +304,123 @@ def test_get_llm_adapter_factory_gemini():
 
     google_adapter = get_llm_adapter("google")
     assert google_adapter.provider_name == "gemini"
+
+
+def test_get_llm_adapter_factory_ollama():
+    adapter = get_llm_adapter("ollama")
+    assert isinstance(adapter, OllamaLLMAdapter)
+    assert adapter.provider_name == "ollama"
+    assert adapter.model_name == "llama3:latest"
+
+
+@pytest.mark.asyncio
+async def test_ollama_llm_adapter_custom_model():
+    adapter = OllamaLLMAdapter(model="llama3:custom", base_url="http://custom:11434/v1")
+    assert adapter.provider_name == "ollama"
+    assert adapter.model_name == "llama3:custom"
+    assert adapter._base_url == "http://custom:11434/v1"
+
+
+@pytest.mark.asyncio
+async def test_ollama_llm_adapter_unreachable_fallback():
+    # If the endpoint is completely unreachable, it should safely fall back to MockLLMAdapter
+    adapter = OllamaLLMAdapter(base_url="http://127.0.0.1:59999/v1", timeout=0.5)
+    decision = await adapter.decide("Lister les membres")
+    assert isinstance(decision, AgentDecision)
+    assert decision.type in ("call_tool", "final_answer")
+
+
+@pytest.mark.asyncio
+async def test_ollama_llm_adapter_mock_http_tool_call():
+    from unittest.mock import MagicMock, patch
+
+    adapter = OllamaLLMAdapter(model="llama3:latest")
+    mock_response = MagicMock()
+    mock_response.is_error = False
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "tool_calls": [
+                        {
+                            "function": {
+                                "name": "query_data",
+                                "arguments": '{"entity": "Membre", "limit": 10}',
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        decision = await adapter.decide("Donne-moi les membres")
+        assert decision.type == "call_tool"
+        assert decision.tool_call.name == "query_data"
+        assert decision.tool_call.arguments == {"entity": "Membre", "limit": 10}
+
+
+@pytest.mark.asyncio
+async def test_ollama_llm_adapter_mock_http_json_content():
+    from unittest.mock import MagicMock, patch
+
+    adapter = OllamaLLMAdapter(model="llama3:latest")
+    mock_response = MagicMock()
+    mock_response.is_error = False
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "content": '{"type": "final_answer", "content": "Voici la réponse d\'Ollama."}'
+                }
+            }
+        ]
+    }
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        decision = await adapter.decide("Bonjour")
+        assert decision.type == "final_answer"
+        assert decision.content == "Voici la réponse d'Ollama."
+
+
+@pytest.mark.asyncio
+async def test_ollama_llm_adapter_error_logging(caplog):
+    import httpx
+    from unittest.mock import MagicMock, patch
+
+    adapter = OllamaLLMAdapter(model="invalid-model")
+    mock_response = MagicMock()
+    mock_response.is_error = True
+    mock_response.status_code = 404
+    mock_response.text = '{"error": "model not found"}'
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "404 Not Found", request=MagicMock(), response=mock_response
+    )
+
+    with patch("httpx.AsyncClient.post", return_value=mock_response):
+        decision = await adapter.decide("Test prompt")
+        assert decision is not None
+        assert "[OLLAMA LLM API ERROR] Status: 404" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ollama_llm_adapter_live_call():
+    import httpx
+
+    # Check if Ollama is running live locally
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            resp = await client.get("http://localhost:11434/api/tags")
+            if resp.status_code != 200:
+                pytest.skip("Ollama is not running locally on port 11434")
+    except Exception:
+        pytest.skip("Ollama is not running locally on port 11434")
+
+    adapter = OllamaLLMAdapter(model="llama3:latest", timeout=30.0)
+    decision = await adapter.decide("Dis bonjour en un mot.")
+    assert isinstance(decision, AgentDecision)
+    assert decision.type in ("final_answer", "call_tool")
+    assert decision.content is not None or decision.tool_call is not None

@@ -248,32 +248,37 @@ def parse_agent_decision_from_json(raw_text: str, prompt: str | None = None) -> 
 
         return AgentDecision(type="final_answer", content=obs_text or clean_text)
 
+    if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+        data = data[0]
+
     if not isinstance(data, dict):
         return AgentDecision(type="final_answer", content=obs_text or str(clean_text))
 
     tool_name = data.get("name") or data.get("tool") or data.get("tool_name")
     args = data.get("arguments") or data.get("args") or {}
+    tool_call = data.get("tool_call")
 
     # Unwrap tool wrappers like {"name": "answer", "arguments": {"type": "final_answer", ...}}
     if isinstance(args, dict) and ("type" in args or "content" in args or "tool_call" in args):
         return parse_agent_decision_from_json(json.dumps(args), prompt=prompt)
 
-    # Standard AgentDecision
+    # 1. Direct tool_call structure (e.g. {"type": "call_tool"|"query_data", "tool_call": {"name": "...", "arguments": ...}})
+    if isinstance(tool_call, dict) and "name" in tool_call:
+        return AgentDecision(
+            type="call_tool",
+            tool_call=ToolCall(
+                name=str(tool_call["name"]),
+                arguments=tool_call.get("arguments") or {},
+            ),
+        )
+
+    # 2. Standard AgentDecision
     if "type" in data and data["type"] in ("call_tool", "ask_user", "final_answer"):
         dtype = data["type"]
         content_val = data.get("content")
-        tool_call = data.get("tool_call")
 
         if dtype == "call_tool":
-            if isinstance(tool_call, dict) and "name" in tool_call:
-                return AgentDecision(
-                    type="call_tool",
-                    tool_call=ToolCall(
-                        name=str(tool_call["name"]),
-                        arguments=tool_call.get("arguments") or {},
-                    ),
-                )
-            elif tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer", "agent_decision"):
+            if tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer", "agent_decision"):
                 return AgentDecision(
                     type="call_tool",
                     tool_call=ToolCall(name=str(tool_name), arguments=args if isinstance(args, dict) else {}),
@@ -284,7 +289,16 @@ def parse_agent_decision_from_json(raw_text: str, prompt: str | None = None) -> 
                 content_val = obs_text or "Traitement effectué."
             return AgentDecision(type=dtype, content=str(content_val))
 
-    # Direct tool call dict like {"name": "query_data", "arguments": {...}}
+    # 3. Model placed tool name in "type" (e.g. {"type": "query_data", "arguments": {...}})
+    dtype = data.get("type")
+    if dtype and str(dtype) not in ("call_tool", "ask_user", "final_answer", "response", "message"):
+        if isinstance(args, dict) and args:
+            return AgentDecision(
+                type="call_tool",
+                tool_call=ToolCall(name=str(dtype), arguments=args),
+            )
+
+    # 4. Direct tool call dict like {"name": "query_data", "arguments": {...}}
     if tool_name and tool_name not in ("json", "tool.exec", "tool_call", "answer", "agent_decision"):
         return AgentDecision(
             type="call_tool",
@@ -404,6 +418,7 @@ class GroqLLMAdapter:
                     )
 
                 raw_json = msg.get("content") or ""
+                logger.info(f"[OLLAMA RAW OUTPUT] {raw_json}")
                 return parse_agent_decision_from_json(raw_json, prompt=prompt)
 
         except Exception as exc:
@@ -552,6 +567,7 @@ class NvidiaLLMAdapter:
                     )
 
                 raw_json = msg.get("content") or ""
+                logger.info(f"[OLLAMA RAW OUTPUT] {raw_json}")
                 return parse_agent_decision_from_json(raw_json, prompt=prompt)
 
         except Exception as exc:
@@ -663,10 +679,126 @@ class GeminiLLMAdapter:
                     )
 
                 raw_json = msg.get("content") or ""
+                logger.info(f"[OLLAMA RAW OUTPUT] {raw_json}")
                 return parse_agent_decision_from_json(raw_json, prompt=prompt)
 
         except Exception as exc:
             logger.warning(f"[GEMINI LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")
+            fallback = MockLLMAdapter()
+            return await fallback.decide(prompt, tools_schema, system_instruction)
+
+
+class OllamaLLMAdapter:
+    """Production Ollama LLM Adapter for local models (e.g. Llama 3) via Ollama's OpenAI-compatible API."""
+
+    def __init__(
+        self,
+        model: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        timeout: float = 60.0,
+    ) -> None:
+        self._model = model or settings.OLLAMA_MODEL or settings.LLM_MODEL
+        self._base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
+        self._api_key = api_key or settings.OLLAMA_API_KEY or "ollama"
+        self._timeout = timeout
+
+    @property
+    def provider_name(self) -> str:
+        return "ollama"
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
+    def _format_tools_description(self, tools_schema: list[dict[str, Any]]) -> str:
+        lines = ["Available tools:"]
+        for t in tools_schema:
+            fn = t.get("function", {})
+            name = fn.get("name", "")
+            desc = fn.get("description", "")
+            props = fn.get("parameters", {}).get("properties", {})
+            params_desc = ", ".join(f'"{k}": {v.get("type", "any")}' for k, v in props.items())
+            lines.append(f'- Tool "{name}": {desc}\n  Arguments schema: {{{params_desc}}}')
+        return "\n".join(lines)
+
+    async def decide(
+        self,
+        prompt: str,
+        tools_schema: list[dict[str, Any]] | None = None,
+        system_instruction: str | None = None,
+    ) -> AgentDecision:
+        tools_desc = ""
+        if tools_schema:
+            tools_desc = "\n\n" + self._format_tools_description(tools_schema)
+
+        json_schema_instruction = (
+            "\n\nDECISION RULES:\n"
+            "1. You do NOT have internal direct access to database records. You MUST call tools to query, find, or explore business data.\n"
+            "2. If the user asks to list, search, find, or get information about entities (such as members, parishes, zones, associations, etc.), you MUST execute a tool using \"type\": \"call_tool\" with \"tool_call\": {\"name\": \"query_data\", \"arguments\": {\"entity\": \"<EntityName>\", \"limit\": 100}}.\n"
+            "3. Only use \"type\": \"final_answer\" when: (a) you have already received the observation data from a tool call below, or (b) the user message is a simple conversational greeting.\n"
+            "4. Output ONLY pure JSON matching the AgentDecision schema:\n"
+            "{\n"
+            '  "type": "call_tool" | "ask_user" | "final_answer",\n'
+            '  "tool_call": {"name": string, "arguments": dict} | null,\n'
+            '  "content": string | null\n'
+            "}\n"
+            "5. When calling a tool, you MUST set \"type\": \"call_tool\" (never put the tool name in \"type\"), and provide \"tool_call\": {\"name\": \"<tool_name>\", \"arguments\": {...}}."
+        )
+        base_sys = system_instruction or "You are Axora Intent Agent powered by Ollama. Fulfill user intents by calling appropriate tools or providing final answers."
+        sys_msg = f"{base_sys}{tools_desc}\n{json_schema_instruction}"
+
+        try:
+            import httpx
+            headers = {
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            }
+            body: dict[str, Any] = {
+                "model": self._model,
+                "messages": [
+                    {"role": "system", "content": sys_msg},
+                    {"role": "user", "content": prompt},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0,
+            }
+
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(f"{self._base_url}/chat/completions", headers=headers, json=body)
+                if resp.is_error:
+                    logger.error(
+                        f"[OLLAMA LLM API ERROR] Status: {resp.status_code} | "
+                        f"Response: {resp.text}"
+                    )
+                resp.raise_for_status()
+                data = resp.json()
+                msg = data["choices"][0]["message"]
+
+                tool_calls = msg.get("tool_calls")
+                if tool_calls and isinstance(tool_calls, list) and len(tool_calls) > 0:
+                    first_fn = tool_calls[0].get("function", {})
+                    fn_name = first_fn.get("name")
+                    fn_args_raw = first_fn.get("arguments", {})
+                    if isinstance(fn_args_raw, str):
+                        try:
+                            fn_args = json.loads(fn_args_raw)
+                        except Exception:
+                            fn_args = {}
+                    else:
+                        fn_args = fn_args_raw or {}
+
+                    return AgentDecision(
+                        type="call_tool",
+                        tool_call=ToolCall(name=fn_name, arguments=fn_args),
+                    )
+
+                raw_json = msg.get("content") or ""
+                logger.info(f"[OLLAMA RAW OUTPUT] {raw_json}")
+                return parse_agent_decision_from_json(raw_json, prompt=prompt)
+
+        except Exception as exc:
+            logger.warning(f"[OLLAMA LLM API CALL FAILED] {exc}. Falling back to Dynamic Mock LLM Adapter.")
             fallback = MockLLMAdapter()
             return await fallback.decide(prompt, tools_schema, system_instruction)
 
@@ -680,6 +812,8 @@ def get_llm_adapter(provider: str | None = None) -> LLMAdapter:
         return GroqLLMAdapter()
     elif prov == "nvidia":
         return NvidiaLLMAdapter()
+    elif prov == "ollama":
+        return OllamaLLMAdapter()
     elif prov == "openai":
         return OpenAILLMAdapter()
     return MockLLMAdapter()

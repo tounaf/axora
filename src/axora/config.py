@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
     GEMINI_MODEL: str = "gemini-1.5-flash"
 
+    # Ollama Specific Settings (Local LLM via Ollama)
+    OLLAMA_API_KEY: str = "ollama"
+    OLLAMA_BASE_URL: str = "http://localhost:11434/v1"
+    OLLAMA_MODEL: str = "llama3:latest"
+
     # Agent Loop Settings
     MAX_AGENT_ITERATIONS: int = 8
 
